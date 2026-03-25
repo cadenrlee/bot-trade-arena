@@ -17,6 +17,7 @@ interface User {
   streak?: number;
   xp?: number;
   level?: number;
+  credits?: number;
 }
 
 interface AuthState {
@@ -24,42 +25,48 @@ interface AuthState {
   token: string | null;
   refreshToken: string | null;
   isLoading: boolean;
+  error: string | null;
   login: (login: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
   logout: () => void;
   loadFromStorage: () => void;
+  refreshUser: () => Promise<void>;
+  clearError: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   token: null,
   refreshToken: null,
   isLoading: false,
+  error: null,
+
+  clearError: () => set({ error: null }),
 
   login: async (login, password) => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
       const res = await api.login({ login, password });
       api.setToken(res.accessToken);
       localStorage.setItem('bta_token', res.accessToken);
       localStorage.setItem('bta_refresh', res.refreshToken);
       set({ user: res.user, token: res.accessToken, refreshToken: res.refreshToken, isLoading: false });
-    } catch (err) {
-      set({ isLoading: false });
+    } catch (err: any) {
+      set({ isLoading: false, error: err.message || 'Login failed' });
       throw err;
     }
   },
 
   register: async (email, username, password) => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
       const res = await api.register({ email, username, password });
       api.setToken(res.accessToken);
       localStorage.setItem('bta_token', res.accessToken);
       localStorage.setItem('bta_refresh', res.refreshToken);
       set({ user: res.user, token: res.accessToken, refreshToken: res.refreshToken, isLoading: false });
-    } catch (err) {
-      set({ isLoading: false });
+    } catch (err: any) {
+      set({ isLoading: false, error: err.message || 'Registration failed' });
       throw err;
     }
   },
@@ -68,7 +75,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     api.setToken(null);
     localStorage.removeItem('bta_token');
     localStorage.removeItem('bta_refresh');
-    set({ user: null, token: null, refreshToken: null });
+    set({ user: null, token: null, refreshToken: null, error: null });
+  },
+
+  refreshUser: async () => {
+    try {
+      const user = await api.getMe();
+      set({ user });
+    } catch { /* silent */ }
   },
 
   loadFromStorage: () => {
@@ -77,11 +91,30 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (token) {
       api.setToken(token);
       set({ token, refreshToken });
-      // Fetch user profile
-      api.getMe().then(user => set({ user })).catch(() => {
-        api.setToken(null);
-        localStorage.removeItem('bta_token');
-        set({ token: null, user: null });
+      // Fetch fresh user profile
+      api.getMe().then(user => set({ user })).catch(async () => {
+        // Token expired — try refresh
+        if (refreshToken) {
+          try {
+            const res = await api.refresh(refreshToken);
+            api.setToken(res.accessToken);
+            localStorage.setItem('bta_token', res.accessToken);
+            localStorage.setItem('bta_refresh', res.refreshToken);
+            set({ token: res.accessToken, refreshToken: res.refreshToken });
+            const user = await api.getMe();
+            set({ user });
+          } catch {
+            // Refresh failed — log out
+            api.setToken(null);
+            localStorage.removeItem('bta_token');
+            localStorage.removeItem('bta_refresh');
+            set({ token: null, user: null, refreshToken: null });
+          }
+        } else {
+          api.setToken(null);
+          localStorage.removeItem('bta_token');
+          set({ token: null, user: null });
+        }
       });
     }
   },

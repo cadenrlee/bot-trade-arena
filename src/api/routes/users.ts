@@ -29,6 +29,10 @@ router.get('/me', authMiddleware, async (req: Request, res: Response) => {
         totalWins: true,
         totalLosses: true,
         totalMatches: true,
+        xp: true,
+        level: true,
+        credits: true,
+        lastActiveAt: true,
         createdAt: true,
       },
     });

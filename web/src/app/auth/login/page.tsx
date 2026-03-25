@@ -64,15 +64,19 @@ export default function LoginPage() {
           </Button>
         </form>
 
-        <p className="text-sm text-[var(--text-secondary)] text-center mt-6">
-          Don&apos;t have an account?{' '}
-          <Link
-            href="/auth/register"
-            className="text-[var(--accent-indigo)] hover:underline font-medium"
-          >
-            Create one
-          </Link>
-        </p>
+        <div className="text-center mt-6 space-y-2">
+          <p className="text-sm text-[var(--text-secondary)]">
+            Don&apos;t have an account?{' '}
+            <Link href="/auth/register" className="text-[var(--accent-indigo)] hover:underline font-medium">
+              Create one
+            </Link>
+          </p>
+          <p>
+            <Link href="/auth/forgot-password" className="text-sm text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]">
+              Forgot password?
+            </Link>
+          </p>
+        </div>
       </Card>
     </div>
   );
