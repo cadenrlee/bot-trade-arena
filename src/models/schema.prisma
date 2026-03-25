@@ -1,0 +1,573 @@
+// Bot Trade Arena — Database Schema
+// Using Prisma ORM with SQLite for local dev
+
+generator client {
+  provider      = "prisma-client-js"
+  engineType    = "binary"
+  binaryTargets = ["native", "windows"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// AUTH & USERS
+// ============================================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  username      String    @unique
+  passwordHash  String
+  displayName   String?
+  avatarUrl     String?
+  bio           String?
+
+  // Subscription
+  plan          String    @default("FREE")
+  stripeId      String?   @unique
+  planExpiresAt DateTime?
+
+  // Stats
+  elo           Int       @default(1000)
+  tier          String    @default("BRONZE")
+  totalWins     Int       @default(0)
+  totalLosses   Int       @default(0)
+  totalMatches  Int       @default(0)
+
+  // Retention
+  credits       Int       @default(0)
+  xp            Int       @default(0)
+  level         Int       @default(1)
+  lastActiveAt  DateTime?
+
+  // Relations
+  bots          Bot[]
+  matchesAsP1   Match[]   @relation("Player1")
+  matchesAsP2   Match[]   @relation("Player2")
+  achievements  UserAchievement[]
+  clanMembership ClanMember?
+  seasonEntries SeasonEntry[]
+  follows       Follow[]  @relation("Follower")
+  followers     Follow[]  @relation("Following")
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  follower    User     @relation("Follower", fields: [followerId], references: [id])
+  following   User     @relation("Following", fields: [followingId], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+}
+
+// ============================================================
+// BOTS
+// ============================================================
+
+model Bot {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+
+  name          String
+  description   String?
+  language      String
+  version       String    @default("1.0.0")
+  isActive      Boolean   @default(true)
+  isPublic      Boolean   @default(false)
+
+  // Connection
+  apiKey        String    @unique @default(cuid())
+  lastConnected DateTime?
+  status        String    @default("INACTIVE")
+
+  // Broker connection (user's trading platform)
+  brokerPlatform String?   // "alpaca", "ibkr", "coinbase", etc.
+  brokerApiKey   String?
+  brokerApiSecret String?
+  brokerPaper    Boolean   @default(true)
+
+  // Lifetime stats
+  elo           Int       @default(1000)
+  totalMatches  Int       @default(0)
+  totalWins     Int       @default(0)
+  totalLosses   Int       @default(0)
+  totalDraws    Int       @default(0)
+  avgScore      Float     @default(0)
+  bestScore     Float     @default(0)
+  winStreak     Int       @default(0)
+  bestWinStreak Int       @default(0)
+
+  // Relations
+  matchesAsBot1 Match[]   @relation("Bot1")
+  matchesAsBot2 Match[]   @relation("Bot2")
+  trades        Trade[]
+  challengeRuns ChallengeRun[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// ============================================================
+// MATCHES
+// ============================================================
+
+model Match {
+  id            String    @id @default(cuid())
+
+  // Players
+  player1Id     String
+  player2Id     String
+  bot1Id        String
+  bot2Id        String
+  player1       User      @relation("Player1", fields: [player1Id], references: [id])
+  player2       User      @relation("Player2", fields: [player2Id], references: [id])
+  bot1          Bot       @relation("Bot1", fields: [bot1Id], references: [id])
+  bot2          Bot       @relation("Bot2", fields: [bot2Id], references: [id])
+
+  // Match config
+  mode          String    // LIVE, ASYNC
+  format        String    @default("LADDER")
+  duration      Int
+  marketSymbols String    // JSON string: ["BTCUSDT", "ETHUSDT"]
+  tier          String
+
+  // State
+  status        String    @default("PENDING")
+  startedAt     DateTime?
+  endedAt       DateTime?
+
+  // Results
+  winnerId      String?
+  bot1Score     Float?
+  bot2Score     Float?
+  bot1Pnl       Float?
+  bot2Pnl       Float?
+  bot1WinRate   Float?
+  bot2WinRate   Float?
+  bot1Sharpe    Float?
+  bot2Sharpe    Float?
+  bot1MaxDd     Float?
+  bot2MaxDd     Float?
+  bot1Trades    Int?
+  bot2Trades    Int?
+
+  // ELO changes
+  eloChange1    Int?
+  eloChange2    Int?
+
+  // Relations
+  trades        Trade[]
+  tournament    Tournament? @relation(fields: [tournamentId], references: [id])
+  tournamentId  String?
+  season        Season?     @relation(fields: [seasonId], references: [id])
+  seasonId      String?
+  snapshots     MatchSnapshot[]
+
+  createdAt     DateTime    @default(now())
+}
+
+model MatchSnapshot {
+  id            String   @id @default(cuid())
+  matchId       String
+  match         Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  timestamp     DateTime
+  elapsed       Int
+
+  bot1Pnl       Float
+  bot1Score     Float
+  bot1Trades    Int
+  bot1Wins      Int
+  bot1OpenPos   Int
+  bot1Cash      Float
+
+  bot2Pnl       Float
+  bot2Score     Float
+  bot2Trades    Int
+  bot2Wins      Int
+  bot2OpenPos   Int
+  bot2Cash      Float
+
+  marketPrices  String   // JSON string
+}
+
+// ============================================================
+// TRADES
+// ============================================================
+
+model Trade {
+  id            String    @id @default(cuid())
+  matchId       String
+  match         Match     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  botId         String
+  bot           Bot       @relation(fields: [botId], references: [id])
+
+  symbol        String
+  side          String    // LONG, SHORT
+  action        String    // OPEN, CLOSE
+  quantity      Float
+  price         Float
+  value         Float
+  timestamp     DateTime
+
+  openTradeId   String?
+  pnl           Float?
+  isWin         Boolean?
+
+  fee           Float     @default(0)
+}
+
+// ============================================================
+// SEASONS
+// ============================================================
+
+model Season {
+  id            String    @id @default(cuid())
+  name          String
+  description   String?
+  number        Int       @unique
+
+  startDate     DateTime
+  endDate       DateTime
+  isActive      Boolean   @default(false)
+
+  allowedSymbols String   // JSON string
+  theme         String?
+
+  matches       Match[]
+  entries       SeasonEntry[]
+  tournaments   Tournament[]
+
+  createdAt     DateTime  @default(now())
+}
+
+model SeasonEntry {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  seasonId      String
+  season        Season   @relation(fields: [seasonId], references: [id])
+
+  elo           Int      @default(1000)
+  tier          String   @default("BRONZE")
+  wins          Int      @default(0)
+  losses        Int      @default(0)
+  draws         Int      @default(0)
+  avgScore      Float    @default(0)
+  peakElo       Int      @default(1000)
+  peakTier      String   @default("BRONZE")
+
+  rewardsClaimed Boolean @default(false)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, seasonId])
+}
+
+// ============================================================
+// TOURNAMENTS
+// ============================================================
+
+model Tournament {
+  id            String    @id @default(cuid())
+  name          String
+  description   String?
+  seasonId      String?
+  season        Season?   @relation(fields: [seasonId], references: [id])
+
+  format        String    // SINGLE_ELIM, DOUBLE_ELIM, SWISS, ROUND_ROBIN
+  tier          String?
+  maxEntrants   Int
+  entryFee      Float     @default(0)
+  prizePool     Float     @default(0)
+
+  registrationOpen  DateTime
+  registrationClose DateTime
+  startDate     DateTime
+  endDate       DateTime?
+
+  status        String    @default("UPCOMING")
+  bracketData   String?   // JSON string
+
+  matches       Match[]
+  entries       TournamentEntry[]
+
+  createdAt     DateTime @default(now())
+}
+
+model TournamentEntry {
+  id            String     @id @default(cuid())
+  tournamentId  String
+  tournament    Tournament @relation(fields: [tournamentId], references: [id])
+  userId        String
+  botId         String
+  seed          Int?
+
+  placement     Int?
+  wins          Int        @default(0)
+  losses        Int        @default(0)
+  prizePayout   Float      @default(0)
+
+  createdAt     DateTime   @default(now())
+
+  @@unique([tournamentId, userId])
+}
+
+// ============================================================
+// CHALLENGES
+// ============================================================
+
+model Challenge {
+  id            String    @id @default(cuid())
+  name          String
+  description   String
+  type          String    // BEAT_BENCHMARK, SURVIVE, MAX_RETURN, CONSTRAINT
+  difficulty    String    // Tier as difficulty
+
+  duration      Int
+  marketSymbols String    // JSON string
+  benchmark     Float?
+  marketData    String?
+
+  isActive      Boolean   @default(true)
+  isDaily       Boolean   @default(false)
+
+  runs          ChallengeRun[]
+
+  createdAt     DateTime  @default(now())
+}
+
+model ChallengeRun {
+  id            String    @id @default(cuid())
+  challengeId   String
+  challenge     Challenge @relation(fields: [challengeId], references: [id])
+  botId         String
+  bot           Bot       @relation(fields: [botId], references: [id])
+  userId        String
+
+  completed     Boolean   @default(false)
+  passed        Boolean   @default(false)
+  score         Float?
+  pnl           Float?
+  trades        Int?
+
+  startedAt     DateTime  @default(now())
+  endedAt       DateTime?
+}
+
+// ============================================================
+// CLANS
+// ============================================================
+
+model Clan {
+  id            String    @id @default(cuid())
+  name          String    @unique
+  tag           String    @unique
+  description   String?
+  avatarUrl     String?
+  ownerId       String
+
+  totalWins     Int       @default(0)
+  totalMatches  Int       @default(0)
+  avgElo        Float     @default(1000)
+
+  members       ClanMember[]
+  createdAt     DateTime  @default(now())
+}
+
+model ClanMember {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id])
+  clanId        String
+  clan          Clan     @relation(fields: [clanId], references: [id])
+  role          String   @default("MEMBER")
+  joinedAt      DateTime @default(now())
+}
+
+// ============================================================
+// ACHIEVEMENTS
+// ============================================================
+
+model Achievement {
+  id            String    @id @default(cuid())
+  key           String    @unique
+  name          String
+  description   String
+  iconUrl       String?
+  category      String
+  rarity        String    // COMMON, UNCOMMON, RARE, EPIC, LEGENDARY
+
+  users         UserAchievement[]
+}
+
+model UserAchievement {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  achievementId String
+  achievement   Achievement @relation(fields: [achievementId], references: [id])
+  unlockedAt    DateTime    @default(now())
+
+  @@unique([userId, achievementId])
+}
+
+// ============================================================
+// LEADERBOARDS
+// ============================================================
+
+model LeaderboardEntry {
+  id            String    @id @default(cuid())
+  userId        String
+  botId         String?
+  period        String    // DAILY, WEEKLY, MONTHLY, SEASON, ALL_TIME
+  periodKey     String
+  seasonId      String?
+
+  rank          Int
+  elo           Int
+  tier          String
+  wins          Int
+  losses        Int
+  avgScore      Float
+  totalPnl      Float
+
+  updatedAt     DateTime  @default(now())
+
+  @@unique([userId, period, periodKey])
+}
+
+// ============================================================
+// RETENTION: STREAKS
+// ============================================================
+
+model UserStreak {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  currentStreak   Int      @default(0)
+  longestStreak   Int      @default(0)
+  lastActivityAt  DateTime?
+  freezesUsed     Int      @default(0)
+  freezesAvailable Int     @default(0)
+  streakRestorable Boolean @default(false)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================
+// RETENTION: DAILY QUESTS
+// ============================================================
+
+model DailyQuest {
+  id            String   @id @default(cuid())
+  userId        String
+  date          String   // "2026-03-25" — one set of quests per day
+  questType     String   // WIN_MATCH, PROFITABLE_TRADES, NEW_SYMBOL, BEAT_PB, WATCH_MATCH
+  description   String
+  target        Int
+  progress      Int      @default(0)
+  completed     Boolean  @default(false)
+  reward        Int      @default(50) // credits
+
+  createdAt     DateTime @default(now())
+
+  @@unique([userId, date, questType])
+}
+
+// ============================================================
+// RETENTION: XP + LEVELS
+// ============================================================
+
+model UserXp {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  totalXp       Int      @default(0)
+  seasonXp      Int      @default(0)
+  level         Int      @default(1)
+  seasonLevel   Int      @default(1)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model XpEvent {
+  id            String   @id @default(cuid())
+  userId        String
+  amount        Int
+  source        String   // MATCH, WIN, QUEST, WEEKLY, TOURNAMENT, CHALLENGE, SPECTATE
+  sourceId      String?
+  description   String
+
+  createdAt     DateTime @default(now())
+}
+
+// ============================================================
+// RETENTION: SEASON PASS
+// ============================================================
+
+model SeasonPass {
+  id            String   @id @default(cuid())
+  userId        String
+  seasonId      String
+  isPremium     Boolean  @default(false)
+  currentLevel  Int      @default(1)
+  xpInLevel     Int      @default(0)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, seasonId])
+}
+
+model SeasonPassReward {
+  id            String   @id @default(cuid())
+  seasonId      String
+  level         Int
+  track         String   // FREE, PREMIUM
+  rewardType    String   // CREDITS, BADGE, FRAME, SKIN, ANIMATED_BADGE
+  rewardData    String   // JSON string with reward details
+
+  @@unique([seasonId, level, track])
+}
+
+// ============================================================
+// RETENTION: NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id            String   @id @default(cuid())
+  userId        String
+  type          String   // STREAK_WARNING, MATCH_RESULT, TOURNAMENT, RANK_UP, FRIEND_ACTIVITY, DECAY_WARNING, NEW_SEASON
+  title         String
+  message       String
+  data          String?  // JSON string
+  read          Boolean  @default(false)
+
+  createdAt     DateTime @default(now())
+}
+
+// ============================================================
+// RETENTION: ELO DECAY TRACKING
+// ============================================================
+
+model EloDecay {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  lastMatchAt     DateTime?
+  decayStartedAt  DateTime?
+  totalDecayed    Int      @default(0)
+  isDecaying      Boolean  @default(false)
+
+  updatedAt       DateTime @updatedAt
+}

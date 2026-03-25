@@ -1,0 +1,144 @@
+@import "tailwindcss";
+
+:root {
+  /* Backgrounds */
+  --bg-primary: #0A0E1A;
+  --bg-secondary: #111827;
+  --bg-tertiary: #1E293B;
+  --bg-card: rgba(17, 24, 39, 0.8);
+
+  /* Borders */
+  --border-default: rgba(255, 255, 255, 0.06);
+  --border-hover: rgba(255, 255, 255, 0.12);
+
+  /* Text */
+  --text-primary: #F1F5F9;
+  --text-secondary: #94A3B8;
+  --text-tertiary: #475569;
+
+  /* Accent */
+  --accent-indigo: #6366F1;
+  --accent-emerald: #10B981;
+  --accent-red: #EF4444;
+  --accent-amber: #F59E0B;
+  --accent-purple: #8B5CF6;
+
+  /* Tiers */
+  --tier-bronze: #CD7F32;
+  --tier-silver: #C0C0C0;
+  --tier-gold: #FFD700;
+  --tier-platinum: #A78BFA;
+  --tier-diamond: #60A5FA;
+
+  /* Chart */
+  --chart-yours: #6366F1;
+  --chart-opponent: #10B981;
+  --chart-profit: #22C55E;
+  --chart-loss: #EF4444;
+  --chart-neutral: #64748B;
+}
+
+@theme inline {
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--bg-secondary);
+  --color-card-hover: var(--bg-tertiary);
+  --color-border: var(--border-default);
+  --color-border-hover: var(--border-hover);
+  --color-muted: var(--text-secondary);
+  --color-hint: var(--text-tertiary);
+  --color-indigo: var(--accent-indigo);
+  --color-emerald: var(--accent-emerald);
+  --color-danger: var(--accent-red);
+  --color-warning: var(--accent-amber);
+  --color-purple: var(--accent-purple);
+  --color-profit: var(--chart-profit);
+  --color-loss: var(--chart-loss);
+  --font-display: 'Plus Jakarta Sans', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-tertiary) transparent;
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Pulsing red dot for live indicators */
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.2); }
+}
+
+.live-dot {
+  animation: pulse-live 2s ease-in-out infinite;
+}
+
+/* Green dot for connected */
+@keyframes pulse-connected {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.connected-dot {
+  animation: pulse-connected 3s ease-in-out infinite;
+}
+
+/* Glow effects for tier badges */
+.glow-bronze { box-shadow: 0 0 15px rgba(205, 127, 50, 0.4); }
+.glow-silver { box-shadow: 0 0 15px rgba(192, 192, 192, 0.4); }
+.glow-gold { box-shadow: 0 0 20px rgba(255, 215, 0, 0.4); }
+.glow-platinum { box-shadow: 0 0 25px rgba(167, 139, 250, 0.5); }
+.glow-diamond { box-shadow: 0 0 30px rgba(96, 165, 250, 0.5); }
+
+/* Card glass effect */
+.glass-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: 16px;
+  backdrop-filter: blur(8px);
+  transition: all 150ms ease;
+}
+
+.glass-card:hover {
+  border-color: var(--border-hover);
+  transform: scale(1.005);
+}
+
+/* Gradient button */
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent-indigo), var(--accent-purple));
+  transition: all 200ms ease;
+}
+
+.btn-primary:hover {
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+  transform: translateY(-1px);
+}
+
+/* Score bar fill animation */
+@keyframes fill-bar {
+  from { width: 0%; }
+}
+
+.score-bar {
+  animation: fill-bar 1s ease-out forwards;
+}
+
+/* Counter animation helper */
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-count {
+  animation: count-up 0.5s ease-out;
+}
