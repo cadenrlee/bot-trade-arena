@@ -348,98 +348,109 @@ export class MatchOrchestrator extends EventEmitter {
     const engine = this.activeMatches.get(matchId);
     if (!engine) return;
 
-    const cfg = engine.getConfig();
+    // Emit immediately for real-time WebSocket broadcasting (don't wait for DB)
+    this.emit('match:ended', { matchId, result });
 
+    // Cleanup in-memory state first
+    this.activeMatches.delete(matchId);
+    this.botToMatch.delete(result.bot1.botId);
+    this.botToMatch.delete(result.bot2.botId);
+
+    // Batch all DB writes in a single transaction (1 round trip instead of 5+)
     try {
-      // Persist results
-      await prisma.match.update({
-        where: { id: matchId },
-        data: {
-          status: 'COMPLETED',
-          endedAt: new Date(),
-          winnerId: result.winner || null,
-          bot1Score: result.bot1.score.compositeScore,
-          bot2Score: result.bot2.score.compositeScore,
-          bot1Pnl: result.bot1.score.rawPnl,
-          bot2Pnl: result.bot2.score.rawPnl,
-          bot1WinRate: result.bot1.score.rawWinRate,
-          bot2WinRate: result.bot2.score.rawWinRate,
-          bot1Sharpe: result.bot1.score.rawSharpe,
-          bot2Sharpe: result.bot2.score.rawSharpe,
-          bot1MaxDd: result.bot1.score.rawMaxDrawdown,
-          bot2MaxDd: result.bot2.score.rawMaxDrawdown,
-          bot1Trades: result.bot1.score.totalTrades,
-          bot2Trades: result.bot2.score.totalTrades,
-          eloChange1: result.bot1.eloChange,
-          eloChange2: result.bot2.eloChange,
-        },
-      });
+      const [bot1, bot2] = await Promise.all([
+        prisma.bot.findUnique({ where: { id: result.bot1.botId }, select: { userId: true, winStreak: true, bestWinStreak: true, avgScore: true, bestScore: true, totalMatches: true } }),
+        prisma.bot.findUnique({ where: { id: result.bot2.botId }, select: { userId: true, winStreak: true, bestWinStreak: true, avgScore: true, bestScore: true, totalMatches: true } }),
+      ]);
 
-      // Update bot stats
-      await this.updateBotStats(result.bot1.botId, result.bot1, result.winner === result.bot1.botId);
-      await this.updateBotStats(result.bot2.botId, result.bot2, result.winner === result.bot2.botId);
+      const b1IsWinner = result.winner === result.bot1.botId;
+      const b2IsWinner = result.winner === result.bot2.botId;
+      const b1WinStreak = b1IsWinner ? (bot1?.winStreak || 0) + 1 : 0;
+      const b2WinStreak = b2IsWinner ? (bot2?.winStreak || 0) + 1 : 0;
 
-      // Update user ELOs
-      const bot1 = await prisma.bot.findUnique({ where: { id: result.bot1.botId } });
-      const bot2 = await prisma.bot.findUnique({ where: { id: result.bot2.botId } });
-      if (bot1) {
-        await prisma.user.update({
+      await prisma.$transaction([
+        // 1. Update match record
+        prisma.match.update({
+          where: { id: matchId },
+          data: {
+            status: 'COMPLETED',
+            endedAt: new Date(),
+            winnerId: result.winner || null,
+            bot1Score: result.bot1.score.compositeScore,
+            bot2Score: result.bot2.score.compositeScore,
+            bot1Pnl: result.bot1.score.rawPnl,
+            bot2Pnl: result.bot2.score.rawPnl,
+            bot1WinRate: result.bot1.score.rawWinRate,
+            bot2WinRate: result.bot2.score.rawWinRate,
+            bot1Sharpe: result.bot1.score.rawSharpe,
+            bot2Sharpe: result.bot2.score.rawSharpe,
+            bot1MaxDd: result.bot1.score.rawMaxDrawdown,
+            bot2MaxDd: result.bot2.score.rawMaxDrawdown,
+            bot1Trades: result.bot1.score.totalTrades,
+            bot2Trades: result.bot2.score.totalTrades,
+            eloChange1: result.bot1.eloChange,
+            eloChange2: result.bot2.eloChange,
+          },
+        }),
+        // 2. Update bot1 stats
+        prisma.bot.update({
+          where: { id: result.bot1.botId },
+          data: {
+            elo: result.bot1.newElo,
+            status: 'CONNECTED',
+            totalMatches: { increment: 1 },
+            totalWins: { increment: b1IsWinner ? 1 : 0 },
+            totalLosses: { increment: (!b1IsWinner && result.bot1.eloChange < 0) ? 1 : 0 },
+            totalDraws: { increment: result.bot1.eloChange === 0 ? 1 : 0 },
+            bestScore: Math.max(bot1?.bestScore || 0, result.bot1.score.compositeScore),
+            avgScore: bot1 ? (bot1.avgScore * bot1.totalMatches + result.bot1.score.compositeScore) / (bot1.totalMatches + 1) : result.bot1.score.compositeScore,
+            winStreak: b1WinStreak,
+            bestWinStreak: Math.max(bot1?.bestWinStreak || 0, b1WinStreak),
+          },
+        }),
+        // 3. Update bot2 stats
+        prisma.bot.update({
+          where: { id: result.bot2.botId },
+          data: {
+            elo: result.bot2.newElo,
+            status: 'CONNECTED',
+            totalMatches: { increment: 1 },
+            totalWins: { increment: b2IsWinner ? 1 : 0 },
+            totalLosses: { increment: (!b2IsWinner && result.bot2.eloChange < 0) ? 1 : 0 },
+            totalDraws: { increment: result.bot2.eloChange === 0 ? 1 : 0 },
+            bestScore: Math.max(bot2?.bestScore || 0, result.bot2.score.compositeScore),
+            avgScore: bot2 ? (bot2.avgScore * bot2.totalMatches + result.bot2.score.compositeScore) / (bot2.totalMatches + 1) : result.bot2.score.compositeScore,
+            winStreak: b2WinStreak,
+            bestWinStreak: Math.max(bot2?.bestWinStreak || 0, b2WinStreak),
+          },
+        }),
+        // 4. Update user1 ELO
+        ...(bot1 ? [prisma.user.update({
           where: { id: bot1.userId },
           data: {
             elo: result.bot1.newElo,
             tier: result.bot1.newTier,
             totalMatches: { increment: 1 },
-            totalWins: { increment: result.winner === result.bot1.botId ? 1 : 0 },
-            totalLosses: { increment: result.winner && result.winner !== result.bot1.botId ? 1 : 0 },
+            totalWins: { increment: b1IsWinner ? 1 : 0 },
+            totalLosses: { increment: result.winner && !b1IsWinner ? 1 : 0 },
           },
-        });
-      }
-      if (bot2) {
-        await prisma.user.update({
+        })] : []),
+        // 5. Update user2 ELO
+        ...(bot2 ? [prisma.user.update({
           where: { id: bot2.userId },
           data: {
             elo: result.bot2.newElo,
             tier: result.bot2.newTier,
             totalMatches: { increment: 1 },
-            totalWins: { increment: result.winner === result.bot2.botId ? 1 : 0 },
-            totalLosses: { increment: result.winner && result.winner !== result.bot2.botId ? 1 : 0 },
+            totalWins: { increment: b2IsWinner ? 1 : 0 },
+            totalLosses: { increment: result.winner && !b2IsWinner ? 1 : 0 },
           },
-        });
-      }
+        })] : []),
+      ]);
     } catch (err) {
       console.error('[Orchestrator] Error persisting match results:', err);
     }
 
-    // Emit for WebSocket broadcasting
-    this.emit('match:ended', { matchId, result });
-
-    // Cleanup
-    this.activeMatches.delete(matchId);
-    this.botToMatch.delete(result.bot1.botId);
-    this.botToMatch.delete(result.bot2.botId);
-
     console.log(`[Orchestrator] Match ${matchId} completed. Winner: ${result.winner || 'DRAW'}`);
-  }
-
-  private async updateBotStats(botId: string, botResult: any, isWinner: boolean): Promise<void> {
-    const bot = await prisma.bot.findUnique({ where: { id: botId } });
-    if (!bot) return;
-
-    const newWinStreak = isWinner ? bot.winStreak + 1 : 0;
-    await prisma.bot.update({
-      where: { id: botId },
-      data: {
-        elo: botResult.newElo,
-        status: 'CONNECTED',
-        totalMatches: { increment: 1 },
-        totalWins: { increment: isWinner ? 1 : 0 },
-        totalLosses: { increment: (!isWinner && botResult.eloChange < 0) ? 1 : 0 },
-        totalDraws: { increment: botResult.eloChange === 0 ? 1 : 0 },
-        avgScore: (bot.avgScore * bot.totalMatches + botResult.score.compositeScore) / (bot.totalMatches + 1),
-        bestScore: Math.max(bot.bestScore, botResult.score.compositeScore),
-        winStreak: newWinStreak,
-        bestWinStreak: Math.max(bot.bestWinStreak, newWinStreak),
-      },
-    });
   }
 }

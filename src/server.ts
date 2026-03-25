@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { config } from './lib/config';
 import { rateLimit } from './api/middleware/rateLimit';
+import { cacheMiddleware } from './lib/cache';
 
 // Route imports
 import authRoutes from './api/routes/auth';
@@ -54,10 +55,10 @@ app.use('/api/auth', authRoutes);
 app.use('/api/bots', botRoutes);
 app.use('/api/matches', matchRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/leaderboards', leaderboardRoutes);
-app.use('/api/seasons', seasonRoutes);
-app.use('/api/tournaments', tournamentRoutes);
-app.use('/api/challenges', challengeRoutes);
+app.use('/api/leaderboards', cacheMiddleware(10000), leaderboardRoutes); // 10s cache
+app.use('/api/seasons', cacheMiddleware(30000), seasonRoutes); // 30s cache
+app.use('/api/tournaments', cacheMiddleware(15000), tournamentRoutes); // 15s cache
+app.use('/api/challenges', cacheMiddleware(30000), challengeRoutes); // 30s cache
 app.use('/api/clans', clanRoutes);
 app.use('/api/sandbox', sandboxRoutes);
 app.use('/api/billing', billingRoutes);
