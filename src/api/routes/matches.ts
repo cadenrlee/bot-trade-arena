@@ -3,13 +3,14 @@ import { z } from 'zod';
 import prisma from '../../lib/prisma';
 import { authMiddleware } from '../middleware/auth';
 import { houseBotService } from '../../services/houseBots';
+import { alpacaStatsService } from '../../services/alpacaStats';
 
 const router = Router();
 
 // POST /api/matches/vs-ai — start a match against a house bot
 router.post('/vs-ai', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const { botId, difficulty } = req.body;
+    const { botId, difficulty, mode } = req.body;
     if (!botId) {
       res.status(400).json({ error: 'botId is required' });
       return;
@@ -22,20 +23,45 @@ router.post('/vs-ai', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    // Access orchestrator via app locals (set in server.ts)
+    // Access orchestrator via app locals
     const orchestrator = req.app.locals.orchestrator;
     if (!orchestrator) {
       res.status(500).json({ error: 'Match system not ready' });
       return;
     }
 
-    const result = await orchestrator.startVsAI(botId, difficulty || undefined);
+    // Check if user wants stock mode (requires market hours)
+    let matchMode = mode || 'crypto'; // 'crypto' or 'stocks'
+    let marketStatus = null;
+
+    if (matchMode === 'stocks') {
+      const apiKey = process.env.ALPACA_API_KEY;
+      const apiSecret = process.env.ALPACA_API_SECRET;
+      if (apiKey && apiSecret) {
+        marketStatus = await alpacaStatsService.isMarketOpen(apiKey, apiSecret);
+        if (!marketStatus.isOpen) {
+          res.status(400).json({
+            error: 'Stock market is closed',
+            marketStatus,
+            message: `Market is closed. Next open: ${marketStatus.nextOpen}. Use crypto mode for 24/7 matches.`,
+          });
+          return;
+        }
+      }
+    }
+
+    const result = await orchestrator.startVsAI(botId, difficulty || undefined, matchMode);
     if (result.error) {
       res.status(400).json({ error: result.error });
       return;
     }
 
-    res.json({ matchId: result.matchId, message: 'Match started!' });
+    res.json({
+      matchId: result.matchId,
+      mode: matchMode,
+      marketStatus,
+      message: `Match started! (${matchMode} mode)`,
+    });
   } catch (err) {
     console.error('Start vs AI error:', err);
     res.status(500).json({ error: 'Internal server error' });

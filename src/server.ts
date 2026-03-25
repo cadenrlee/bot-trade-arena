@@ -19,6 +19,7 @@ import billingRoutes from './api/routes/billing';
 import retentionRoutes from './api/routes/retention';
 import notificationRoutes from './api/routes/notifications';
 import templateRoutes from './api/routes/templates';
+import alpacaRoutes from './api/routes/alpaca';
 
 // Service imports
 import { MarketDataService } from './services/marketData';
@@ -63,6 +64,7 @@ app.use('/api/billing', billingRoutes);
 app.use('/api/retention', retentionRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/templates', templateRoutes);
+app.use('/api/alpaca', alpacaRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

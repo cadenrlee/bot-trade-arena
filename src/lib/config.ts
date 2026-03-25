@@ -26,6 +26,7 @@ export const config = {
   },
 
   symbols: (process.env.DEFAULT_SYMBOLS || 'btcusdt,ethusdt,solusdt').split(','),
+  stockSymbols: (process.env.STOCK_SYMBOLS || 'AAPL,TSLA,NVDA,MSFT,AMZN,SPY,QQQ,META').split(','),
 
   match: {
     duration: parseInt(process.env.DEFAULT_MATCH_DURATION || '300', 10),

@@ -98,6 +98,7 @@ export class MatchOrchestrator extends EventEmitter {
   async startVsAI(
     playerBotId: string,
     houseBotDifficulty?: 'ROOKIE' | 'VETERAN' | 'ELITE',
+    matchMode: string = 'crypto',
   ): Promise<{ matchId: string; error?: string }> {
     const playerBot = await prisma.bot.findUnique({ where: { id: playerBotId }, include: { user: true } });
     if (!playerBot) return { matchId: '', error: 'Bot not found' };
@@ -112,7 +113,9 @@ export class MatchOrchestrator extends EventEmitter {
     if (!houseBot) return { matchId: '', error: 'House bot not in DB — run server restart' };
 
     const matchId = createId();
-    const symbols = config.symbols.map(s => s.toUpperCase());
+    const symbols = matchMode === 'stocks'
+      ? config.stockSymbols.map(s => s.toUpperCase())
+      : config.symbols.map(s => s.toUpperCase());
     const tier = eloToTier(playerBot.elo);
 
     const matchConfig: MatchConfig = {
