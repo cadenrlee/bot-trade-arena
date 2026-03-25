@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { createId } from '@paralleldrive/cuid2';
+import crypto from 'crypto';
+function createId() { return crypto.randomBytes(12).toString('hex'); }
 import { config } from '../../lib/config';
 
 const router = Router();
