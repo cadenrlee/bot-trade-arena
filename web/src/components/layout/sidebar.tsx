@@ -14,6 +14,7 @@ const publicNav = [
 const authedNav = [
   { href: '/', label: 'Home', icon: '⌂' },
   { href: '/matches/live', label: 'Find a Match', icon: '◉', live: true },
+  { href: '/social', label: 'Friends & Battle', icon: '⚔' },
   { href: '/bots', label: 'My Bots', icon: '⚙' },
   { href: '/bots/connect', label: 'Connect Platform', icon: '⚡', highlight: true },
   { href: '/bots/templates', label: 'Bot Builder', icon: '✦' },
