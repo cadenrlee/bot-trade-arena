@@ -561,6 +561,60 @@ model Notification {
 // RETENTION: ELO DECAY TRACKING
 // ============================================================
 
+// ============================================================
+// MARKET DATA RECORDING (for async matches)
+// ============================================================
+
+model MarketChunk {
+  id          String   @id @default(cuid())
+  symbols     String   // JSON array
+  startTime   DateTime
+  endTime     DateTime
+  tickData    String   // JSON array of MarketTick
+  tickCount   Int
+  sessionType String   // MARKET_HOURS, CRYPTO_24H
+
+  createdAt   DateTime @default(now())
+}
+
+// ============================================================
+// HEAD-TO-HEAD CHALLENGES
+// ============================================================
+
+model HeadToHead {
+  id                String    @id @default(cuid())
+  challengerUserId  String
+  challengerBotId   String
+  targetUserId      String
+  defenderUserId    String?
+  defenderBotId     String?
+  chunkId           String    // MarketChunk ID or "synthetic"
+
+  challengerScore     Float
+  challengerScoreData String?   // JSON ScoreBreakdown
+  defenderScore       Float?
+  defenderScoreData   String?   // JSON ScoreBreakdown
+  winnerId            String?
+
+  status            String    @default("PENDING") // PENDING, COMPLETED, EXPIRED
+  createdAt         DateTime  @default(now())
+  completedAt       DateTime?
+}
+
+// ============================================================
+// FRIENDS
+// ============================================================
+
+model FriendRequest {
+  id          String   @id @default(cuid())
+  fromUserId  String
+  toUserId    String
+  status      String   @default("PENDING") // PENDING, ACCEPTED, REJECTED
+  createdAt   DateTime @default(now())
+
+  @@unique([fromUserId, toUserId])
+}
+
 model EloDecay {
   id              String   @id @default(cuid())
   userId          String   @unique

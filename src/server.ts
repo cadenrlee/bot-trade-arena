@@ -21,6 +21,7 @@ import retentionRoutes from './api/routes/retention';
 import notificationRoutes from './api/routes/notifications';
 import templateRoutes from './api/routes/templates';
 import alpacaRoutes from './api/routes/alpaca';
+import socialRoutes from './api/routes/social';
 
 // Service imports
 import { MarketDataService } from './services/marketData';
@@ -28,6 +29,7 @@ import { MatchOrchestrator } from './services/matchOrchestrator';
 import { BotWebSocketServer } from './services/botWebSocket';
 import { SpectatorWebSocketServer } from './services/spectatorWebSocket';
 import { houseBotService } from './services/houseBots';
+import { MarketRecorder } from './services/marketRecorder';
 
 const app = express();
 
@@ -66,6 +68,7 @@ app.use('/api/retention', retentionRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/alpaca', alpacaRoutes);
+app.use('/api/social', socialRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -125,6 +128,10 @@ server.listen(config.port, () => {
 
   // Start match orchestrator
   orchestrator.start();
+
+  // Start recording market data for async matches
+  const recorder = new MarketRecorder(marketData);
+  recorder.start();
 
   // Start WebSocket servers
   botWsServer = new BotWebSocketServer(server, orchestrator);
