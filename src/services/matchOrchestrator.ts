@@ -7,7 +7,8 @@ import { houseBotService } from './houseBots';
 import { templateBotRunner } from './templateBots';
 import { config } from '../lib/config';
 import prisma from '../lib/prisma';
-import { createId } from '@paralleldrive/cuid2';
+import crypto from 'crypto';
+function createId() { return crypto.randomBytes(12).toString('hex'); }
 
 interface ConnectedBot {
   botId: string;

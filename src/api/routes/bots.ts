@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { createId } from '@paralleldrive/cuid2';
+import crypto from 'crypto';
 import prisma from '../../lib/prisma';
 import { authMiddleware } from '../middleware/auth';
 
@@ -157,7 +157,7 @@ router.post('/:botId/regenerate-key', async (req: Request, res: Response) => {
 });
 
 function generateApiKey(): string {
-  return `bta_${createId()}${createId()}`;
+  return `bta_${crypto.randomBytes(24).toString('hex')}`;
 }
 
 function sanitizeBot(bot: any) {
