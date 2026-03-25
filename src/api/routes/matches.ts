@@ -7,6 +7,56 @@ import { alpacaStatsService } from '../../services/alpacaStats';
 
 const router = Router();
 
+// GET /api/matches — list my match history (authenticated)
+// MUST be before /:matchId to avoid being shadowed
+router.get('/', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+
+    const matches = await prisma.match.findMany({
+      where: {
+        OR: [
+          { player1Id: req.user!.userId },
+          { player2Id: req.user!.userId },
+        ],
+        status: 'COMPLETED',
+      },
+      include: {
+        bot1: { select: { id: true, name: true } },
+        bot2: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    res.json(matches);
+  } catch (err) {
+    console.error('List matches error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/matches/live — list currently live matches (public)
+router.get('/live', async (_req: Request, res: Response) => {
+  try {
+    const matches = await prisma.match.findMany({
+      where: { status: 'RUNNING' },
+      include: {
+        bot1: { select: { id: true, name: true, elo: true } },
+        bot2: { select: { id: true, name: true, elo: true } },
+        player1: { select: { id: true, username: true } },
+        player2: { select: { id: true, username: true } },
+      },
+      orderBy: { startedAt: 'desc' },
+    });
+    res.json(matches);
+  } catch (err) {
+    console.error('List live matches error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/matches/vs-ai — start a match against a house bot
 router.post('/vs-ai', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -73,26 +123,6 @@ router.get('/house-bots', (_req: Request, res: Response) => {
   res.json(houseBotService.getAvailableBots());
 });
 
-// GET /api/matches/live — list currently live matches (public)
-router.get('/live', async (_req: Request, res: Response) => {
-  try {
-    const matches = await prisma.match.findMany({
-      where: { status: 'RUNNING' },
-      include: {
-        bot1: { select: { id: true, name: true, elo: true } },
-        bot2: { select: { id: true, name: true, elo: true } },
-        player1: { select: { id: true, username: true } },
-        player2: { select: { id: true, username: true } },
-      },
-      orderBy: { startedAt: 'desc' },
-    });
-    res.json(matches);
-  } catch (err) {
-    console.error('List live matches error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 // GET /api/matches/:matchId
 router.get('/:matchId', async (req: Request, res: Response) => {
   try {
@@ -128,35 +158,6 @@ router.get('/:matchId/replay', async (req: Request, res: Response) => {
     res.json(snapshots);
   } catch (err) {
     console.error('Get replay error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// GET /api/matches — list my match history (authenticated)
-router.get('/', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
-
-    const matches = await prisma.match.findMany({
-      where: {
-        OR: [
-          { player1Id: req.user!.userId },
-          { player2Id: req.user!.userId },
-        ],
-        status: 'COMPLETED',
-      },
-      include: {
-        bot1: { select: { id: true, name: true } },
-        bot2: { select: { id: true, name: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
-    res.json(matches);
-  } catch (err) {
-    console.error('List matches error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

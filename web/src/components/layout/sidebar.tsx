@@ -52,7 +52,11 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
-          const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+          const isExactMatch = pathname === item.href;
+          const isChildMatch = item.href !== '/' && pathname.startsWith(item.href + '/');
+          // Don't highlight parent if a more specific child nav item matches
+          const hasMoreSpecificMatch = navItems.some(n => n.href !== item.href && n.href.startsWith(item.href) && (pathname === n.href || pathname.startsWith(n.href + '/')));
+          const isActive = isExactMatch || (isChildMatch && !hasMoreSpecificMatch);
           return (
             <Link
               key={item.href}

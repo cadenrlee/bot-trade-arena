@@ -113,6 +113,7 @@ export class HouseBotService {
   onTick(engine: MatchEngine, houseBotId: string, tick: MarketTick): void {
     const difficulty = this.getDifficulty(houseBotId);
     const { symbol, price } = tick;
+    const now = Date.now();
 
     // Track price history
     const key = `${houseBotId}:${symbol}`;
@@ -120,6 +121,13 @@ export class HouseBotService {
     const history = this.priceHistory.get(key)!;
     history.push(price);
     if (history.length > 30) history.shift();
+
+    // Track open positions
+    const posKey = `${houseBotId}:positions`;
+    if (!this.priceHistory.has(posKey)) this.priceHistory.set(posKey, []);
+
+    // --- Position closing logic ---
+    this.closePositions(engine, houseBotId, symbol, price, now, difficulty);
 
     // Need enough data
     const minHistory = difficulty === 'ROOKIE' ? 10 : difficulty === 'VETERAN' ? 8 : 5;
@@ -147,6 +155,7 @@ export class HouseBotService {
         engine.processOrder(houseBotId, {
           symbol, side: actualSide as 'LONG' | 'SHORT', action: 'OPEN', quantity: sizePct,
         });
+        this.trackPosition(houseBotId, symbol, actualSide as 'LONG' | 'SHORT', price, now);
       }
     } else if (difficulty === 'VETERAN') {
       // Veteran: mean reversion with decent timing
@@ -156,8 +165,10 @@ export class HouseBotService {
 
       if (zScore < -1.0) {
         engine.processOrder(houseBotId, { symbol, side: 'LONG', action: 'OPEN', quantity: sizePct });
+        this.trackPosition(houseBotId, symbol, 'LONG', price, now);
       } else if (zScore > 1.0) {
         engine.processOrder(houseBotId, { symbol, side: 'SHORT', action: 'OPEN', quantity: sizePct });
+        this.trackPosition(houseBotId, symbol, 'SHORT', price, now);
       }
     } else {
       // Elite: aggressive momentum + mean reversion hybrid
@@ -167,14 +178,90 @@ export class HouseBotService {
 
       if (momentum > 0.1 && zScore < 0.5) {
         engine.processOrder(houseBotId, { symbol, side: 'LONG', action: 'OPEN', quantity: sizePct });
+        this.trackPosition(houseBotId, symbol, 'LONG', price, now);
       } else if (momentum < -0.1 && zScore > -0.5) {
         engine.processOrder(houseBotId, { symbol, side: 'SHORT', action: 'OPEN', quantity: sizePct });
+        this.trackPosition(houseBotId, symbol, 'SHORT', price, now);
       } else if (zScore < -1.5) {
         engine.processOrder(houseBotId, { symbol, side: 'LONG', action: 'OPEN', quantity: sizePct * 1.5 });
+        this.trackPosition(houseBotId, symbol, 'LONG', price, now);
       } else if (zScore > 1.5) {
         engine.processOrder(houseBotId, { symbol, side: 'SHORT', action: 'OPEN', quantity: sizePct * 1.5 });
+        this.trackPosition(houseBotId, symbol, 'SHORT', price, now);
       }
     }
+  }
+
+  /**
+   * Track an opened position for later closing.
+   */
+  private trackPosition(botId: string, symbol: string, side: 'LONG' | 'SHORT', entryPrice: number, openedAt: number): void {
+    const posKey = `${botId}:positions`;
+    if (!this.priceHistory.has(posKey)) this.priceHistory.set(posKey, []);
+    // Encode position data into the number array: [symbol hash, side (1=LONG, -1=SHORT), entryPrice, openedAt]
+    const positions = this.priceHistory.get(posKey)!;
+    // Store as packed values — use symbol char code sum as identifier
+    const symHash = symbol.split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+    positions.push(symHash, side === 'LONG' ? 1 : -1, entryPrice, openedAt);
+  }
+
+  /**
+   * Close positions that are profitable after 15s or losing after 30s.
+   */
+  private closePositions(
+    engine: MatchEngine,
+    botId: string,
+    currentSymbol: string,
+    currentPrice: number,
+    now: number,
+    difficulty: 'ROOKIE' | 'VETERAN' | 'ELITE',
+  ): void {
+    const posKey = `${botId}:positions`;
+    const positions = this.priceHistory.get(posKey);
+    if (!positions || positions.length === 0) return;
+
+    const symHash = currentSymbol.split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+    const remaining: number[] = [];
+
+    // Positions are stored as groups of 4: [symHash, side, entryPrice, openedAt]
+    for (let i = 0; i < positions.length; i += 4) {
+      const pSymHash = positions[i];
+      const pSide = positions[i + 1];
+      const pEntry = positions[i + 2];
+      const pOpened = positions[i + 3];
+
+      if (pSymHash !== symHash) {
+        // Different symbol — keep it
+        remaining.push(pSymHash, pSide, pEntry, pOpened);
+        continue;
+      }
+
+      const elapsed = (now - pOpened) / 1000;
+      const side: 'LONG' | 'SHORT' = pSide === 1 ? 'LONG' : 'SHORT';
+      const pnl = side === 'LONG' ? currentPrice - pEntry : pEntry - currentPrice;
+      const profitable = pnl > 0;
+
+      // Close profitable positions after 15 seconds
+      if (elapsed >= 15 && profitable) {
+        engine.processOrder(botId, {
+          symbol: currentSymbol, side, action: 'CLOSE', quantity: 1,
+        });
+        continue; // Don't keep — position closed
+      }
+
+      // Close losing positions after 30 seconds (stop loss)
+      if (elapsed >= 30 && !profitable) {
+        engine.processOrder(botId, {
+          symbol: currentSymbol, side, action: 'CLOSE', quantity: 1,
+        });
+        continue; // Don't keep — position closed
+      }
+
+      // Keep position open
+      remaining.push(pSymHash, pSide, pEntry, pOpened);
+    }
+
+    this.priceHistory.set(posKey, remaining);
   }
 
   /**

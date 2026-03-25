@@ -80,14 +80,22 @@ export default function Home() {
   const { user } = useAuthStore();
   const [liveMatches, setLiveMatches] = useState<LiveMatch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [quests, setQuests] = useState<any[]>([]);
+  const [streakData, setStreakData] = useState<any>(null);
 
   useEffect(() => {
     api
       .getLiveMatches()
-      .then((matches) => setLiveMatches(matches))
+      .then((matches) => setLiveMatches(Array.isArray(matches) ? matches : []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+
+    // Fetch real quest and streak data if logged in
+    if (user) {
+      api.request('/api/retention/quests').then((q: any) => setQuests(q?.quests || [])).catch(() => {});
+      api.request('/api/retention/streak').then((s: any) => setStreakData(s)).catch(() => {});
+    }
+  }, [user]);
 
   // Not logged in — hero section
   if (!user) {
@@ -162,7 +170,7 @@ export default function Home() {
   }
 
   // Logged-in home screen
-  const streak = user.streak ?? 0;
+  const streak = streakData?.currentStreak ?? user.streak ?? 0;
   const xp = user.xp ?? 0;
   const level = user.level ?? 1;
   const xpForNext = level * 500;
@@ -221,9 +229,19 @@ export default function Home() {
           Daily Quests
         </h2>
         <div className="flex justify-around">
-          <QuestRing progress={66} label="Play 3 Matches" />
-          <QuestRing progress={100} label="Win 1 Match" />
-          <QuestRing progress={33} label="Spectate 3 Matches" />
+          {quests.length > 0 ? quests.map((q: any, i: number) => (
+            <QuestRing
+              key={i}
+              progress={q.target > 0 ? Math.round((q.progress / q.target) * 100) : 0}
+              label={q.description || `Quest ${i + 1}`}
+            />
+          )) : (
+            <>
+              <QuestRing progress={0} label="Play a Match" />
+              <QuestRing progress={0} label="Win a Match" />
+              <QuestRing progress={0} label="Watch a Match" />
+            </>
+          )}
         </div>
       </div>
 

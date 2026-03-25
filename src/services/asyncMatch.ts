@@ -116,6 +116,10 @@ export class AsyncMatchService {
     // Run match manually (accelerated — no real-time waiting)
     engine.startManual();
 
+    // Register event listener BEFORE processing ticks to avoid race condition
+    let matchResult: any = null;
+    engine.on('match:end', (result) => { matchResult = result; });
+
     // Feed ticks and let bot trade
     let tickIndex = 0;
     for (const tick of chunk.ticks) {
@@ -139,10 +143,6 @@ export class AsyncMatchService {
     while (engine.getStatus() === 'running' && engine.getElapsed() < duration) {
       engine.manualTick();
     }
-
-    // Collect result
-    let matchResult: any = null;
-    engine.on('match:end', (result) => { matchResult = result; });
 
     // Final ticks to trigger end
     for (let i = 0; i < 10 && engine.getStatus() === 'running'; i++) {
@@ -171,18 +171,24 @@ export class AsyncMatchService {
     const result = await this.playAsync(challengerBotId, chunkId);
     if (result.error) return { challengeId: '', score: null, error: result.error };
 
-    // Save the challenge
-    const challenge = await prisma.headToHead.create({
-      data: {
-        challengerUserId,
-        challengerBotId,
-        targetUserId,
-        chunkId: chunkId || 'synthetic',
-        challengerScore: result.score.compositeScore,
-        challengerScoreData: JSON.stringify(result.score),
-        status: 'PENDING',
-      },
-    });
+    // Save the challenge — store synthetic chunk data so defender replays the same data
+    const challengeData: any = {
+      challengerUserId,
+      challengerBotId,
+      targetUserId,
+      chunkId: chunkId || 'synthetic',
+      challengerScore: result.score.compositeScore,
+      challengerScoreData: JSON.stringify(result.score),
+      status: 'PENDING',
+    };
+
+    // If no explicit chunkId was provided, we used synthetic data.
+    // Store it so the defender replays the exact same ticks.
+    if (!chunkId) {
+      challengeData.syntheticChunkData = JSON.stringify(this.lastSyntheticChunk);
+    }
+
+    const challenge = await prisma.headToHead.create({ data: challengeData });
 
     // Notify target
     await prisma.notification.create({
@@ -210,8 +216,27 @@ export class AsyncMatchService {
     if (!challenge) return { winner: '', challengerScore: 0, defenderScore: 0, error: 'Challenge not found' };
     if (challenge.status !== 'PENDING') return { winner: '', challengerScore: 0, defenderScore: 0, error: 'Challenge already completed' };
 
-    // Play the same data
-    const result = await this.playAsync(defenderBotId, challenge.chunkId !== 'synthetic' ? challenge.chunkId : undefined);
+    // Play the same data — for synthetic chunks, replay the stored data
+    let replayChunkId: string | undefined = undefined;
+    if (challenge.chunkId !== 'synthetic') {
+      replayChunkId = challenge.chunkId;
+    } else if ((challenge as any).syntheticChunkData) {
+      // Store the synthetic chunk as a temporary market chunk so playAsync can find it
+      const syntheticData = JSON.parse((challenge as any).syntheticChunkData);
+      const tempChunk = await prisma.marketChunk.create({
+        data: {
+          symbols: JSON.stringify(syntheticData.symbols),
+          tickData: JSON.stringify(syntheticData.ticks),
+          sessionType: syntheticData.sessionType || 'CRYPTO_24H',
+          tickCount: syntheticData.ticks.length,
+          startTime: new Date(),
+          endTime: new Date(),
+        },
+      });
+      replayChunkId = tempChunk.id;
+    }
+
+    const result = await this.playAsync(defenderBotId, replayChunkId);
     if (result.error) return { winner: '', challengerScore: 0, defenderScore: 0, error: result.error };
 
     const challengerScore = challenge.challengerScore;
@@ -236,6 +261,8 @@ export class AsyncMatchService {
     return { winner, challengerScore, defenderScore };
   }
 
+  private lastSyntheticChunk: any = null;
+
   private generateSyntheticChunk() {
     const symbols = config.symbols.map(s => s.toUpperCase());
     const ticks: MarketTick[] = [];
@@ -250,7 +277,9 @@ export class AsyncMatchService {
       }
     }
 
-    return { id: 'synthetic', symbols, ticks, sessionType: 'CRYPTO_24H' };
+    const chunk = { id: 'synthetic', symbols, ticks, sessionType: 'CRYPTO_24H' };
+    this.lastSyntheticChunk = chunk;
+    return chunk;
   }
 }
 

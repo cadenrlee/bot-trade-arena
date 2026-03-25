@@ -175,6 +175,24 @@ router.post('/friend-request/:id/accept', authMiddleware, async (req: Request, r
   }
 });
 
+// POST /api/social/friend-request/:id/reject
+router.post('/friend-request/:id/reject', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const request = await prisma.friendRequest.findUnique({ where: { id } });
+    if (!request || request.toUserId !== req.user!.userId) {
+      res.status(404).json({ error: 'Request not found' });
+      return;
+    }
+
+    await prisma.friendRequest.update({ where: { id }, data: { status: 'REJECTED' } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Reject friend error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/social/friends — my friends list
 router.get('/friends', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -240,9 +258,17 @@ router.get('/pending-requests', authMiddleware, async (req: Request, res: Respon
 // GET /api/social/compare/:botId1/:botId2 — compare two bots
 router.get('/compare/:botId1/:botId2', async (req: Request, res: Response) => {
   try {
+    const botSelect = {
+      id: true, name: true, description: true, language: true, version: true,
+      isActive: true, isPublic: true, status: true, elo: true,
+      totalMatches: true, totalWins: true, totalLosses: true, totalDraws: true,
+      avgScore: true, bestScore: true, winStreak: true, bestWinStreak: true,
+      brokerPlatform: true, brokerPaper: true, createdAt: true,
+      user: { select: { username: true } },
+    };
     const [bot1, bot2] = await Promise.all([
-      prisma.bot.findUnique({ where: { id: req.params.botId1 as string }, include: { user: { select: { username: true } } } }),
-      prisma.bot.findUnique({ where: { id: req.params.botId2 as string }, include: { user: { select: { username: true } } } }),
+      prisma.bot.findUnique({ where: { id: req.params.botId1 as string }, select: botSelect }),
+      prisma.bot.findUnique({ where: { id: req.params.botId2 as string }, select: botSelect }),
     ]);
 
     if (!bot1 || !bot2) { res.status(404).json({ error: 'Bot not found' }); return; }
@@ -294,6 +320,18 @@ router.get('/compare/:botId1/:botId2', async (req: Request, res: Response) => {
 // SUPERLATIVES
 // ============================================================
 
+// GET /api/social/superlatives — global superlatives (best of each category)
+// MUST be before /superlatives/:botId to avoid being shadowed
+router.get('/superlatives', async (_req: Request, res: Response) => {
+  try {
+    const superlatives = await superlativesService.getGlobalSuperlatives();
+    res.json(superlatives);
+  } catch (err) {
+    console.error('Global superlatives error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/social/superlatives/:botId — get bot superlatives
 router.get('/superlatives/:botId', async (req: Request, res: Response) => {
   try {
@@ -301,17 +339,6 @@ router.get('/superlatives/:botId', async (req: Request, res: Response) => {
     res.json(superlatives);
   } catch (err) {
     console.error('Superlatives error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// GET /api/social/superlatives — global superlatives (best of each category)
-router.get('/superlatives', async (_req: Request, res: Response) => {
-  try {
-    const superlatives = await superlativesService.getGlobalSuperlatives();
-    res.json(superlatives);
-  } catch (err) {
-    console.error('Global superlatives error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

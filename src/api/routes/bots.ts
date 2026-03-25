@@ -61,7 +61,7 @@ router.post('/', async (req: Request, res: Response) => {
       },
     });
 
-    res.status(201).json(sanitizeBot(bot));
+    res.status(201).json(sanitizeBot(bot, true));
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: 'Validation failed', details: err.errors });
@@ -149,7 +149,7 @@ router.post('/:botId/regenerate-key', async (req: Request, res: Response) => {
       where: { id: botId },
       data: { apiKey: generateApiKey() },
     });
-    res.json({ apiKey: updated.apiKey });
+    res.json(sanitizeBot(updated, true));
   } catch (err) {
     console.error('Regenerate key error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -160,7 +160,8 @@ function generateApiKey(): string {
   return `bta_${crypto.randomBytes(24).toString('hex')}`;
 }
 
-function sanitizeBot(bot: any) {
+function sanitizeBot(bot: any, includeFullApiKey = false) {
+  const apiKeyLast4 = bot.apiKey ? bot.apiKey.slice(-4) : null;
   return {
     id: bot.id,
     name: bot.name,
@@ -169,7 +170,7 @@ function sanitizeBot(bot: any) {
     version: bot.version,
     isActive: bot.isActive,
     isPublic: bot.isPublic,
-    apiKey: bot.apiKey,
+    ...(includeFullApiKey ? { apiKey: bot.apiKey } : { apiKeyLast4 }),
     status: bot.status,
     elo: bot.elo,
     totalMatches: bot.totalMatches,

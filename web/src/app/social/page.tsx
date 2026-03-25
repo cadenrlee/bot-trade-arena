@@ -90,7 +90,7 @@ export default function SocialPage() {
     try {
       const result = await api.request<any>('/api/social/challenge', {
         method: 'POST',
-        body: JSON.stringify({ botId: selectedBot, targetUsername }),
+        body: JSON.stringify({ botId: selectedBot, targetUsername, duration: selectedDuration }),
       });
       setMessage(`Challenge sent! Your score: ${result.yourScore}`);
       setChallengeTarget(null);
@@ -220,7 +220,12 @@ export default function SocialPage() {
                     </div>
                     <div className="flex gap-2">
                       <Button size="sm" onClick={() => acceptRequest(r.id)}>Accept</Button>
-                      <Button size="sm" variant="ghost">Ignore</Button>
+                      <Button size="sm" variant="ghost" onClick={async () => {
+                        try {
+                          await api.request(`/api/social/friend-request/${r.id}/reject`, { method: 'POST' });
+                          fetchData();
+                        } catch { /* empty */ }
+                      }}>Ignore</Button>
                     </div>
                   </div>
                 ))}
