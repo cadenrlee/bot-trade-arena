@@ -1,341 +1,361 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
-} from 'recharts';
 import { api } from '@/lib/api';
-import { spectatorSocket } from '@/lib/ws';
-import { useMatchStore } from '@/stores/match';
 import { Card } from '@/components/ui/card';
 import { TierBadge } from '@/components/ui/tier-badge';
-import { LiveDot } from '@/components/ui/live-dot';
 import { Button } from '@/components/ui/button';
-import { formatDuration, formatPnl } from '@/lib/utils';
+import { formatPnl } from '@/lib/utils';
 
 // ============================================================
-// ROBOT FIGHTER — Full animated SVG robot with arms, legs, effects
+// SPARK PARTICLES
 // ============================================================
-
-function Sparks({ active, color, side }: { active: boolean; color: string; side: 'left' | 'right' }) {
-  if (!active) return null;
-  const particles = Array.from({ length: 8 }, (_, i) => i);
+function Sparks({ color }: { color: string }) {
   return (
-    <div className="absolute inset-0 pointer-events-none">
-      {particles.map((i) => {
-        const angle = (i / 8) * 360;
-        const dist = 20 + Math.random() * 25;
-        const x = Math.cos((angle * Math.PI) / 180) * dist;
-        const y = Math.sin((angle * Math.PI) / 180) * dist;
-        const size = 2 + Math.random() * 4;
+    <>
+      {Array.from({ length: 10 }).map((_, i) => {
+        const angle = (i / 10) * 360;
+        const dist = 25 + Math.random() * 30;
         return (
           <motion.div
             key={i}
             className="absolute rounded-full"
             style={{
-              width: size, height: size, background: color,
-              left: '50%', top: '40%',
-              boxShadow: `0 0 ${size * 2}px ${color}`,
+              width: 3 + Math.random() * 4, height: 3 + Math.random() * 4,
+              background: color, left: '50%', top: '40%',
+              boxShadow: `0 0 8px ${color}`,
             }}
-            initial={{ x: 0, y: 0, opacity: 1, scale: 1 }}
-            animate={{ x, y, opacity: 0, scale: 0 }}
-            transition={{ duration: 0.5 + Math.random() * 0.3, ease: 'easeOut' }}
+            initial={{ x: 0, y: 0, opacity: 1 }}
+            animate={{
+              x: Math.cos((angle * Math.PI) / 180) * dist,
+              y: Math.sin((angle * Math.PI) / 180) * dist,
+              opacity: 0,
+            }}
+            transition={{ duration: 0.6, ease: 'easeOut' }}
           />
         );
       })}
-    </div>
+    </>
   );
 }
 
-function Robot({ side, action, color, pnl }: { side: 'left' | 'right'; action: string; color: string; pnl: number }) {
+// ============================================================
+// ROBOT FIGHTER — Full SVG
+// ============================================================
+function Robot({ side, action, color, pnlPct }: { side: 'left' | 'right'; action: string; color: string; pnlPct: number }) {
   const isHit = action === 'hit';
   const isAttack = action === 'attack';
   const isWin = action === 'win';
   const isLose = action === 'lose';
+  const m = side === 'right' ? -1 : 1;
   const faceColor = isHit ? '#EF4444' : isWin ? '#22C55E' : color;
-  const glow = isAttack ? `0 0 30px ${color}` : isWin ? `0 0 40px ${color}` : 'none';
-  const mirror = side === 'right' ? -1 : 1;
 
   return (
-    <motion.div
-      className="relative"
-      animate={
-        action === 'idle' ? { y: [0, -8, 0] } :
-        isAttack ? { x: [0, 50 * mirror, 0], rotate: [0, 10 * mirror, 0] } :
-        isHit ? { x: [0, -20 * mirror, 0], rotate: [0, -8 * mirror, 0] } :
-        isWin ? { y: [0, -18, 0], scale: [1, 1.1, 1] } :
-        isLose ? { opacity: 0.35, scale: 0.85, y: 10 } :
-        {}
-      }
-      transition={
-        action === 'idle' ? { duration: 1.8, repeat: Infinity, ease: 'easeInOut' } :
-        isWin ? { duration: 0.7, repeat: Infinity, ease: 'easeInOut' } :
-        { duration: 0.4, ease: 'easeOut' }
-      }
-    >
-      {/* Energy glow behind robot */}
+    <div className="relative">
+      {/* Hit sparks */}
+      {isHit && <Sparks color="#EF4444" />}
+      {isAttack && <Sparks color={color} />}
+
+      {/* Energy glow */}
       {(isAttack || isWin) && (
         <motion.div
-          className="absolute rounded-full blur-xl"
-          style={{ background: color, width: 80, height: 80, left: '50%', top: '50%', transform: 'translate(-50%,-50%)' }}
-          initial={{ opacity: 0, scale: 0.5 }}
-          animate={{ opacity: [0.3, 0.1], scale: [0.8, 1.2] }}
+          className="absolute rounded-full blur-2xl"
+          style={{ background: color, width: 100, height: 100, left: '50%', top: '50%', transform: 'translate(-50%,-50%)' }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: [0.4, 0.1] }}
           transition={{ duration: 0.5 }}
         />
       )}
 
-      {/* Hit sparks */}
-      <Sparks active={isHit} color="#EF4444" side={side} />
-      {isAttack && <Sparks active={true} color={color} side={side} />}
+      <motion.div
+        animate={
+          action === 'idle' ? { y: [0, -10, 0] } :
+          isAttack ? { x: [0, 55 * m, 0], rotate: [0, 12 * m, 0] } :
+          isHit ? { x: [0, -25 * m, 0], rotate: [0, -8 * m, 0] } :
+          isWin ? { y: [0, -20, 0], scale: [1, 1.12, 1] } :
+          isLose ? { opacity: 0.3, scale: 0.8, y: 15 } : {}
+        }
+        transition={
+          action === 'idle' ? { duration: 1.5, repeat: Infinity, ease: 'easeInOut' } :
+          isWin ? { duration: 0.6, repeat: Infinity } :
+          { duration: 0.35, ease: 'easeOut' }
+        }
+      >
+        <svg width="100" height="130" viewBox="0 0 100 130" style={{ filter: (isAttack || isWin) ? `drop-shadow(0 0 15px ${color})` : 'none' }}>
+          {/* Antenna */}
+          <line x1="50" y1="8" x2="50" y2="20" stroke={color} strokeWidth="3" strokeLinecap="round" />
+          <motion.circle cx="50" cy="5" r="4" fill={color}
+            animate={isAttack ? { r: [4, 7, 4], opacity: [1, 0.5, 1] } : isWin ? { r: [4, 6, 4] } : {}}
+            transition={{ duration: 0.4, repeat: isWin ? Infinity : 0 }}
+          />
 
-      <svg width="90" height="120" viewBox="0 0 90 120" style={{ filter: `drop-shadow(${glow})` }}>
-        {/* Antenna */}
-        <motion.line x1="45" y1="8" x2="45" y2="18" stroke={color} strokeWidth="3" strokeLinecap="round"
-          animate={isWin ? { y1: [8, 3, 8] } : {}}
-          transition={{ duration: 0.5, repeat: Infinity }}
-        />
-        <motion.circle cx="45" cy="5" r="4" fill={color}
-          animate={isWin ? { r: [4, 5, 4], opacity: [1, 0.6, 1] } : isAttack ? { r: [4, 6, 4] } : {}}
-          transition={{ duration: 0.4 }}
-        />
-
-        {/* Head */}
-        <rect x="22" y="18" width="46" height="36" rx="10" fill={isHit ? 'rgba(239,68,68,0.2)' : `color-mix(in srgb, ${color} 12%, #111827)`} stroke={isHit ? '#EF4444' : color} strokeWidth="2" opacity={isLose ? 0.5 : 1} />
-
-        {/* Eyes */}
-        <motion.circle cx="36" cy="32" r={isHit ? 2 : 4} fill={faceColor}
-          animate={isHit ? { cy: [32, 34, 32], r: [4, 2, 4] } : isAttack ? { r: [4, 5, 4] } : {}}
-        />
-        <motion.circle cx="54" cy="32" r={isHit ? 2 : 4} fill={faceColor}
-          animate={isHit ? { cy: [32, 34, 32], r: [4, 2, 4] } : isAttack ? { r: [4, 5, 4] } : {}}
-        />
-        {/* Eye shine */}
-        <circle cx="34" cy="30" r="1.5" fill="white" opacity="0.6" />
-        <circle cx="52" cy="30" r="1.5" fill="white" opacity="0.6" />
-
-        {/* Mouth */}
-        {isWin ? (
-          <path d="M 36 42 Q 45 50 54 42" stroke="#22C55E" strokeWidth="2.5" fill="none" strokeLinecap="round" />
-        ) : isHit ? (
-          <path d="M 36 46 Q 45 40 54 46" stroke="#EF4444" strokeWidth="2" fill="none" strokeLinecap="round" />
-        ) : isAttack ? (
-          <circle cx="45" cy="44" r="3" fill={color} opacity="0.7" />
-        ) : (
-          <line x1="38" y1="44" x2="52" y2="44" stroke={color} strokeWidth="2" strokeLinecap="round" opacity="0.5" />
-        )}
-
-        {/* Body */}
-        <rect x="27" y="56" width="36" height="30" rx="6" fill={isHit ? 'rgba(239,68,68,0.15)' : `color-mix(in srgb, ${color} 10%, #111827)`} stroke={isHit ? '#EF4444' : color} strokeWidth="1.5" opacity={isLose ? 0.5 : 1} />
-        {/* Body detail — power core */}
-        <motion.circle cx="45" cy="71" r="5" fill={color} opacity={0.3}
-          animate={isAttack ? { opacity: [0.3, 0.8, 0.3], r: [5, 7, 5] } : isWin ? { opacity: [0.3, 0.6, 0.3] } : {}}
-          transition={{ duration: 0.5 }}
-        />
-        <circle cx="45" cy="71" r="2" fill={color} opacity="0.6" />
-
-        {/* Left arm */}
-        <motion.g
-          animate={
-            isAttack && side === 'left' ? { rotate: [0, -45, 0], x: [0, 10, 0] } :
-            isAttack && side === 'right' ? { rotate: [0, 20, 0] } :
-            isHit ? { rotate: [0, 15, 0] } :
-            action === 'idle' ? { rotate: [0, -3, 0] } : {}
+          {/* Head */}
+          <rect x="24" y="20" width="52" height="38" rx="12" fill={isHit ? 'rgba(239,68,68,0.2)' : '#1a1a2e'} stroke={isHit ? '#EF4444' : color} strokeWidth="2.5" />
+          {/* Eyes */}
+          <motion.circle cx="38" cy="35" r={isHit ? 2 : 5} fill={faceColor}
+            animate={isHit ? { r: [5, 2, 5] } : isAttack ? { r: [5, 7, 5] } : {}}
+          />
+          <motion.circle cx="62" cy="35" r={isHit ? 2 : 5} fill={faceColor}
+            animate={isHit ? { r: [5, 2, 5] } : isAttack ? { r: [5, 7, 5] } : {}}
+          />
+          <circle cx="36" cy="33" r="2" fill="white" opacity="0.5" />
+          <circle cx="60" cy="33" r="2" fill="white" opacity="0.5" />
+          {/* Mouth */}
+          {isWin ? <path d="M 38 46 Q 50 55 62 46" stroke="#22C55E" strokeWidth="3" fill="none" strokeLinecap="round" />
+           : isHit ? <path d="M 38 50 Q 50 43 62 50" stroke="#EF4444" strokeWidth="2" fill="none" strokeLinecap="round" />
+           : isAttack ? <ellipse cx="50" cy="47" rx="4" ry="3" fill={color} opacity="0.8" />
+           : <line x1="40" y1="48" x2="60" y2="48" stroke={color} strokeWidth="2" strokeLinecap="round" opacity="0.4" />
           }
-          transition={{ duration: isAttack ? 0.3 : 1.5, repeat: action === 'idle' ? Infinity : 0 }}
-          style={{ transformOrigin: '27px 62px' }}
-        >
-          <rect x="8" y="58" width="19" height="8" rx="4" fill={color} opacity={isLose ? 0.4 : 0.7} />
-          {/* Fist */}
-          <circle cx="10" cy="62" r="5" fill={isAttack ? color : `color-mix(in srgb, ${color} 70%, #111827)`} />
-        </motion.g>
 
-        {/* Right arm */}
-        <motion.g
-          animate={
-            isAttack && side === 'right' ? { rotate: [0, 45, 0], x: [0, -10, 0] } :
-            isAttack && side === 'left' ? { rotate: [0, -20, 0] } :
-            isHit ? { rotate: [0, -15, 0] } :
-            action === 'idle' ? { rotate: [0, 3, 0] } : {}
-          }
-          transition={{ duration: isAttack ? 0.3 : 1.5, repeat: action === 'idle' ? Infinity : 0 }}
-          style={{ transformOrigin: '63px 62px' }}
-        >
-          <rect x="63" y="58" width="19" height="8" rx="4" fill={color} opacity={isLose ? 0.4 : 0.7} />
-          <circle cx="80" cy="62" r="5" fill={isAttack ? color : `color-mix(in srgb, ${color} 70%, #111827)`} />
-        </motion.g>
+          {/* Body */}
+          <rect x="30" y="60" width="40" height="34" rx="8" fill="#1a1a2e" stroke={isHit ? '#EF4444' : color} strokeWidth="2" />
+          {/* Power core */}
+          <motion.circle cx="50" cy="77" r="6" fill={color} opacity={0.25}
+            animate={isAttack ? { opacity: [0.25, 0.9, 0.25], r: [6, 9, 6] } : {}}
+          />
+          <circle cx="50" cy="77" r="3" fill={color} opacity="0.7" />
 
-        {/* Legs */}
-        <motion.rect x="32" y="87" width="10" height="18" rx="4" fill={color} opacity={isLose ? 0.3 : 0.5}
-          animate={action === 'idle' ? { height: [18, 16, 18] } : isWin ? { height: [18, 14, 18] } : {}}
-          transition={{ duration: action === 'idle' ? 1.8 : 0.7, repeat: Infinity }}
-        />
-        <motion.rect x="48" y="87" width="10" height="18" rx="4" fill={color} opacity={isLose ? 0.3 : 0.5}
-          animate={action === 'idle' ? { height: [16, 18, 16] } : isWin ? { height: [14, 18, 14] } : {}}
-          transition={{ duration: action === 'idle' ? 1.8 : 0.7, repeat: Infinity }}
-        />
-        {/* Feet */}
-        <rect x="29" y="103" width="16" height="6" rx="3" fill={color} opacity={isLose ? 0.3 : 0.4} />
-        <rect x="45" y="103" width="16" height="6" rx="3" fill={color} opacity={isLose ? 0.3 : 0.4} />
-      </svg>
+          {/* Left arm */}
+          <motion.g style={{ transformOrigin: '30px 66px' }}
+            animate={
+              isAttack && side === 'left' ? { rotate: [0, -60, 0] } :
+              isAttack ? { rotate: [0, 25, 0] } :
+              isHit ? { rotate: [0, 20, 0] } :
+              action === 'idle' ? { rotate: [0, -4, 0, 4, 0] } : {}
+            }
+            transition={{ duration: isAttack ? 0.25 : 2, repeat: action === 'idle' ? Infinity : 0 }}
+          >
+            <rect x="6" y="62" width="24" height="10" rx="5" fill={color} opacity="0.7" />
+            <circle cx="8" cy="67" r="6" fill={isAttack ? color : '#1a1a2e'} stroke={color} strokeWidth="2" />
+          </motion.g>
 
-      {/* P&L badge under robot */}
-      <div className="absolute -bottom-1 left-1/2 -translate-x-1/2">
-        <div className="px-2 py-0.5 rounded-full text-[10px] font-bold font-[var(--font-mono)]" style={{
-          background: pnl >= 0 ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
-          color: pnl >= 0 ? '#10B981' : '#EF4444',
-          border: `1px solid ${pnl >= 0 ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
+          {/* Right arm */}
+          <motion.g style={{ transformOrigin: '70px 66px' }}
+            animate={
+              isAttack && side === 'right' ? { rotate: [0, 60, 0] } :
+              isAttack ? { rotate: [0, -25, 0] } :
+              isHit ? { rotate: [0, -20, 0] } :
+              action === 'idle' ? { rotate: [0, 4, 0, -4, 0] } : {}
+            }
+            transition={{ duration: isAttack ? 0.25 : 2, repeat: action === 'idle' ? Infinity : 0 }}
+          >
+            <rect x="70" y="62" width="24" height="10" rx="5" fill={color} opacity="0.7" />
+            <circle cx="92" cy="67" r="6" fill={isAttack ? color : '#1a1a2e'} stroke={color} strokeWidth="2" />
+          </motion.g>
+
+          {/* Legs */}
+          <motion.rect x="35" y="95" width="11" height="22" rx="5" fill={color} opacity="0.5"
+            animate={action === 'idle' ? { height: [22, 18, 22] } : isWin ? { height: [22, 14, 22] } : {}}
+            transition={{ duration: 1.5, repeat: Infinity }}
+          />
+          <motion.rect x="54" y="95" width="11" height="22" rx="5" fill={color} opacity="0.5"
+            animate={action === 'idle' ? { height: [18, 22, 18] } : isWin ? { height: [14, 22, 14] } : {}}
+            transition={{ duration: 1.5, repeat: Infinity }}
+          />
+          <rect x="32" y="115" width="17" height="7" rx="3.5" fill={color} opacity="0.35" />
+          <rect x="51" y="115" width="17" height="7" rx="3.5" fill={color} opacity="0.35" />
+        </svg>
+      </motion.div>
+
+      {/* P&L badge */}
+      <div className="text-center mt-1">
+        <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold font-[var(--font-mono)]" style={{
+          background: pnlPct >= 0 ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+          color: pnlPct >= 0 ? '#10B981' : '#EF4444',
         }}>
-          {pnl >= 0 ? '+' : ''}{pnl.toFixed(1)}%
-        </div>
+          {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
+        </span>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
-function DamageNumber({ value, side, isCrit }: { value: string; side: 'left' | 'right'; isCrit?: boolean }) {
-  return (
-    <motion.div
-      initial={{ opacity: 1, y: 0, scale: isCrit ? 1.5 : 1 }}
-      animate={{ opacity: 0, y: -40, scale: isCrit ? 2 : 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.9 }}
-      className="absolute font-black font-[var(--font-mono)] z-10"
-      style={{
-        color: isCrit ? '#F59E0B' : '#EF4444',
-        fontSize: isCrit ? 18 : 14,
-        textShadow: isCrit ? '0 0 10px #F59E0B' : '0 0 6px rgba(239,68,68,0.5)',
-        left: '50%', transform: 'translateX(-50%)', top: -15,
-      }}
-    >
-      {isCrit && 'CRIT! '}{value}
-    </motion.div>
-  );
+// ============================================================
+// CLIENT-SIDE MATCH SIMULATION
+// ============================================================
+interface SimBot {
+  name: string; pnl: number; trades: number; wins: number; losses: number;
+  positions: { symbol: string; side: string; entry: number; id: string }[];
+  cash: number;
+}
+
+function simulateTick(bot: SimBot, prices: Record<string, number>, strategy: 'momentum' | 'reversion'): { action?: string; pnl?: number; symbol?: string } {
+  const symbols = Object.keys(prices);
+  if (symbols.length === 0) return {};
+  const sym = symbols[Math.floor(Math.random() * symbols.length)];
+  const price = prices[sym];
+  if (!price) return {};
+
+  // Close existing positions sometimes
+  if (bot.positions.length > 0 && Math.random() < 0.15) {
+    const pos = bot.positions[0];
+    const exitPnl = pos.side === 'LONG' ? (price - pos.entry) * 100 : (pos.entry - price) * 100;
+    bot.positions.shift();
+    bot.pnl += exitPnl;
+    bot.cash += Math.abs(exitPnl);
+    bot.trades++;
+    if (exitPnl > 0) bot.wins++; else bot.losses++;
+    return { action: 'CLOSE', pnl: exitPnl, symbol: pos.symbol };
+  }
+
+  // Open new positions
+  if (bot.positions.length < 3 && Math.random() < (strategy === 'momentum' ? 0.08 : 0.06)) {
+    const side = Math.random() > 0.5 ? 'LONG' : 'SHORT';
+    bot.positions.push({ symbol: sym, side, entry: price, id: `p${bot.trades}` });
+    return { action: 'OPEN', symbol: sym };
+  }
+
+  return {};
 }
 
 // ============================================================
 // MAIN PAGE
 // ============================================================
-
 export default function MatchSpectatorPage() {
   const { matchId } = useParams<{ matchId: string }>();
-  const {
-    matchData, currentTick, trades, pnlHistory, spectatorCount,
-    setActiveMatch, updateTick, addTrade, setSpectatorCount, clearMatch,
-  } = useMatchStore();
-
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [matchOver, setMatchOver] = useState(false);
-  const [prediction, setPrediction] = useState<'bot1' | 'bot2' | null>(null);
-  const tradeFeedRef = useRef<HTMLDivElement>(null);
+  const [matchData, setMatchData] = useState<any>(null);
 
-  // Robot battle state
+  // Simulation state
+  const [elapsed, setElapsed] = useState(0);
+  const [duration] = useState(120); // 2 min visual match
+  const [matchOver, setMatchOver] = useState(false);
+  const [bot1, setBot1] = useState<SimBot>({ name: 'Your Bot', pnl: 0, trades: 0, wins: 0, losses: 0, positions: [], cash: 100000 });
+  const [bot2, setBot2] = useState<SimBot>({ name: 'Opponent', pnl: 0, trades: 0, wins: 0, losses: 0, positions: [], cash: 100000 });
+  const [prices, setPrices] = useState<Record<string, number>>({ BTCUSDT: 67500, ETHUSDT: 3200, SOLUSDT: 145 });
+  const [trades, setTrades] = useState<any[]>([]);
+
+  // Robot state
   const [bot1Action, setBot1Action] = useState('idle');
   const [bot2Action, setBot2Action] = useState('idle');
   const [dmg1, setDmg1] = useState<string | null>(null);
   const [dmg2, setDmg2] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
   const [combo, setCombo] = useState(0);
+  const [prediction, setPrediction] = useState<1 | 2 | null>(null);
+  const [commentary, setCommentary] = useState('Bots are entering the arena...');
 
-  // React to trades for robot animations
-  const lastTradeCount = useRef(0);
+  const tradeFeedRef = useRef<HTMLDivElement>(null);
+  const simRef = useRef<ReturnType<typeof setInterval>>(undefined);
+
+  // Fetch match data
   useEffect(() => {
-    if (trades.length <= lastTradeCount.current) return;
-    lastTradeCount.current = trades.length;
-    const trade = trades[trades.length - 1];
-    if (!trade || !matchData) return;
+    api.getMatch(matchId).then((data) => {
+      setMatchData(data);
+      const b1Name = data.bot1?.name || 'Your Bot';
+      const b2Name = data.bot2?.name || 'Opponent';
+      setBot1(b => ({ ...b, name: b1Name }));
+      setBot2(b => ({ ...b, name: b2Name }));
+      setLoading(false);
 
-    const isBot1 = trade.botId === matchData.bot1?.id || trade.botId === matchData.bot1Id;
-    const isClose = trade.type === 'CLOSE';
-    const isWin = trade.pnl != null && trade.pnl > 0;
-    const isBig = Math.abs(trade.pnl || 0) > 30;
-
-    if (isClose) {
-      if (isBot1 && isWin) {
-        setBot1Action('attack'); setBot2Action('hit');
-        setDmg2(`-$${Math.abs(trade.pnl || 0).toFixed(0)}`);
-        setCombo(c => c + 1);
-      } else if (isBot1 && !isWin) {
-        setBot1Action('hit'); setBot2Action('attack');
-        setDmg1(`-$${Math.abs(trade.pnl || 0).toFixed(0)}`);
-        setCombo(0);
-      } else if (!isBot1 && isWin) {
-        setBot2Action('attack'); setBot1Action('hit');
-        setDmg1(`-$${Math.abs(trade.pnl || 0).toFixed(0)}`);
-      } else {
-        setBot2Action('hit'); setBot1Action('attack');
-        setDmg2(`-$${Math.abs(trade.pnl || 0).toFixed(0)}`);
+      // If match already completed, show results immediately
+      if (data.status === 'COMPLETED') {
+        setMatchOver(true);
+        setElapsed(data.duration || 120);
+        setBot1(b => ({ ...b, pnl: data.bot1Pnl || 0, trades: data.bot1Trades || 0 }));
+        setBot2(b => ({ ...b, pnl: data.bot2Pnl || 0, trades: data.bot2Trades || 0 }));
       }
-      if (isBig) setShake(true);
-    }
-
-    const timer = setTimeout(() => {
-      setBot1Action(matchOver ? 'idle' : 'idle');
-      setBot2Action(matchOver ? 'idle' : 'idle');
-      setDmg1(null); setDmg2(null); setShake(false);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [trades.length]);
-
-  // Match over — set winner animations
-  useEffect(() => {
-    if (!matchOver || !matchData) return;
-    const w = matchData.winnerId;
-    setBot1Action(w === matchData.bot1Id ? 'win' : w === matchData.bot2Id ? 'lose' : 'idle');
-    setBot2Action(w === matchData.bot2Id ? 'win' : w === matchData.bot1Id ? 'lose' : 'idle');
-  }, [matchOver, matchData]);
-
-  // Fetch + poll
-  useEffect(() => {
-    let mounted = true;
-    let pollTimer: ReturnType<typeof setInterval>;
-
-    async function fetchMatch() {
-      try {
-        const data = await api.getMatch(matchId);
-        if (!mounted) return;
-        setActiveMatch(matchId, data);
-        setLoading(false);
-        if (data.status === 'COMPLETED') {
-          setMatchOver(true);
-          updateTick({
-            elapsed: data.duration || 300, remaining: 0, prices: {},
-            bot1: { botId: data.bot1?.id || '', pnl: data.bot1Pnl || 0, totalCapital: 100000 + (data.bot1Pnl || 0), trades: data.bot1Trades || 0, wins: 0, losses: 0, winRate: data.bot1WinRate || 0, openPositions: 0 },
-            bot2: { botId: data.bot2?.id || '', pnl: data.bot2Pnl || 0, totalCapital: 100000 + (data.bot2Pnl || 0), trades: data.bot2Trades || 0, wins: 0, losses: 0, winRate: data.bot2WinRate || 0, openPositions: 0 },
-          });
-        }
-      } catch { if (mounted) setLoading(false); }
-    }
-
-    fetchMatch();
-    pollTimer = setInterval(() => {
-      if (!mounted || matchOver) return;
-      api.getMatch(matchId).then((data) => {
-        if (!mounted) return;
-        if (data.status === 'COMPLETED') {
-          setMatchOver(true);
-          updateTick({
-            elapsed: data.duration || 300, remaining: 0, prices: {},
-            bot1: { botId: data.bot1?.id || '', pnl: data.bot1Pnl || 0, totalCapital: 100000 + (data.bot1Pnl || 0), trades: data.bot1Trades || 0, wins: 0, losses: 0, winRate: data.bot1WinRate || 0, openPositions: 0 },
-            bot2: { botId: data.bot2?.id || '', pnl: data.bot2Pnl || 0, totalCapital: 100000 + (data.bot2Pnl || 0), trades: data.bot2Trades || 0, wins: 0, losses: 0, winRate: data.bot2WinRate || 0, openPositions: 0 },
-          });
-        }
-      }).catch(() => {});
-    }, 2000);
-
-    try { spectatorSocket.connect(); spectatorSocket.subscribeMatch(matchId); } catch {}
-    const off1 = spectatorSocket.on('match:tick', (d) => { if (mounted) updateTick(d); });
-    const off2 = spectatorSocket.on('match:trade', (d) => { if (mounted) addTrade(d); });
-    const off3 = spectatorSocket.on('match:spectators', (d) => { if (mounted) setSpectatorCount(d.count); });
-    const off4 = spectatorSocket.on('match:end', () => { if (mounted) setMatchOver(true); });
-
-    return () => { mounted = false; clearInterval(pollTimer); spectatorSocket.unsubscribeMatch(matchId); off1(); off2(); off3(); off4(); clearMatch(); };
+    }).catch(() => setLoading(false));
   }, [matchId]);
 
+  // Run client-side simulation
+  useEffect(() => {
+    if (loading || matchOver || !matchData || matchData.status === 'COMPLETED') return;
+
+    const commentaries = [
+      '{b1} opens aggressively!', '{b2} is reading the market...', 'Both bots are trading cautiously.',
+      '{b1} lands a profitable trade!', '{b2} takes a hit!', 'The tension is building!',
+      '{b1} is on fire!', '{b2} fights back!', 'Critical moment approaching!',
+      'The crowd goes wild!', 'Incredible trading from both sides!', '{b1} smells blood!',
+      '{b2} is mounting a comeback!', 'This could go either way!', 'Final stretch!',
+    ];
+
+    simRef.current = setInterval(() => {
+      setElapsed(prev => {
+        const next = prev + 1;
+        if (next >= duration) {
+          clearInterval(simRef.current);
+          setMatchOver(true);
+          return duration;
+        }
+        return next;
+      });
+
+      // Update prices (random walk)
+      setPrices(prev => {
+        const next = { ...prev };
+        for (const sym of Object.keys(next)) {
+          next[sym] *= (1 + (Math.random() - 0.5) * 0.001);
+          next[sym] = Math.round(next[sym] * 100) / 100;
+        }
+        return next;
+      });
+
+      // Simulate bot trading
+      setBot1(prev => {
+        const b = { ...prev, positions: [...prev.positions] };
+        const result = simulateTick(b, prices, 'momentum');
+        if (result.action === 'CLOSE' && result.pnl != null) {
+          const isWin = result.pnl > 0;
+          const isBig = Math.abs(result.pnl) > 20;
+          setTrades(t => [...t.slice(-25), { bot: 1, ...result, time: Date.now() }]);
+          if (isWin) {
+            setBot1Action('attack'); setBot2Action('hit');
+            setDmg2(formatPnl(result.pnl)); setCombo(c => c + 1);
+            if (isBig) setShake(true);
+          } else {
+            setBot1Action('hit'); setBot2Action('attack');
+            setDmg1(formatPnl(result.pnl)); setCombo(0);
+          }
+          setTimeout(() => { setBot1Action('idle'); setBot2Action('idle'); setDmg1(null); setDmg2(null); setShake(false); }, 500);
+        }
+        return b;
+      });
+
+      setBot2(prev => {
+        const b = { ...prev, positions: [...prev.positions] };
+        const result = simulateTick(b, prices, 'reversion');
+        if (result.action === 'CLOSE' && result.pnl != null) {
+          const isWin = result.pnl > 0;
+          setTrades(t => [...t.slice(-25), { bot: 2, ...result, time: Date.now() }]);
+          if (isWin) {
+            setBot2Action('attack'); setBot1Action('hit');
+            setDmg1(formatPnl(result.pnl));
+          } else {
+            setBot2Action('hit'); setBot1Action('attack');
+            setDmg2(formatPnl(result.pnl));
+          }
+          setTimeout(() => { setBot1Action('idle'); setBot2Action('idle'); setDmg1(null); setDmg2(null); }, 500);
+        }
+        return b;
+      });
+
+      // Random commentary
+      if (Math.random() < 0.05) {
+        const c = commentaries[Math.floor(Math.random() * commentaries.length)];
+        setCommentary(c.replace('{b1}', bot1.name).replace('{b2}', bot2.name));
+      }
+    }, 1000);
+
+    return () => clearInterval(simRef.current);
+  }, [loading, matchOver, matchData, duration]);
+
+  // Auto scroll trades
   useEffect(() => {
     if (tradeFeedRef.current) tradeFeedRef.current.scrollTop = tradeFeedRef.current.scrollHeight;
   }, [trades]);
+
+  // Match over effects
+  useEffect(() => {
+    if (!matchOver) return;
+    const w = bot1.pnl > bot2.pnl ? 1 : bot2.pnl > bot1.pnl ? 2 : 0;
+    setBot1Action(w === 1 ? 'win' : w === 2 ? 'lose' : 'idle');
+    setBot2Action(w === 2 ? 'win' : w === 1 ? 'lose' : 'idle');
+    setCommentary(w === 1 ? `${bot1.name} is victorious!` : w === 2 ? `${bot2.name} takes the crown!` : "It's a draw!");
+  }, [matchOver]);
 
   if (loading) return (
     <div className="flex min-h-screen items-center justify-center">
@@ -348,256 +368,176 @@ export default function MatchSpectatorPage() {
     </div>
   );
 
-  if (!matchData) return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-4">
-      <p className="text-[var(--text-secondary)]">Match not found.</p>
-      <Button variant="secondary" onClick={() => window.history.back()}>Go Back</Button>
-    </div>
-  );
-
-  const bot1 = matchData.bot1 || { name: 'Bot 1', elo: 1000 };
-  const bot2 = matchData.bot2 || { name: 'Bot 2', elo: 1000 };
-  const bot1Pnl = currentTick?.bot1?.pnl ?? matchData.bot1Pnl ?? 0;
-  const bot2Pnl = currentTick?.bot2?.pnl ?? matchData.bot2Pnl ?? 0;
-  const bot1Trades = currentTick?.bot1?.trades ?? matchData.bot1Trades ?? 0;
-  const bot2Trades = currentTick?.bot2?.trades ?? matchData.bot2Trades ?? 0;
-  const totalPnl = Math.abs(bot1Pnl) + Math.abs(bot2Pnl) || 1;
-  const bot1BarPct = Math.max(8, Math.min(92, ((bot1Pnl + totalPnl) / (2 * totalPnl)) * 100));
-  const remaining = currentTick?.remaining ?? matchData.duration ?? 0;
-  const elapsed = currentTick?.elapsed ?? 0;
-  const duration = matchData.duration || 300;
-  const isCompleted = matchOver || matchData.status === 'COMPLETED';
-  const isRunning = matchData.status === 'RUNNING' && !matchOver;
-  const winnerId = matchData.winnerId;
-  const bot1Score = matchData.bot1Score;
-  const bot2Score = matchData.bot2Score;
-  const bot1PnlPct = (bot1Pnl / 100000) * 100;
-  const bot2PnlPct = (bot2Pnl / 100000) * 100;
+  const bot1PnlPct = (bot1.pnl / 100000) * 100;
+  const bot2PnlPct = (bot2.pnl / 100000) * 100;
+  const totalP = Math.abs(bot1PnlPct) + Math.abs(bot2PnlPct) || 1;
+  const bar1 = Math.max(8, Math.min(92, ((bot1PnlPct + totalP) / (2 * totalP)) * 100));
+  const winner = bot1.pnl > bot2.pnl ? 1 : bot2.pnl > bot1.pnl ? 2 : 0;
+  const timePct = (elapsed / duration) * 100;
 
   return (
-    <div className={`min-h-screen px-4 py-6 sm:px-6 lg:px-8 ${shake ? 'animate-[shake_0.3s_ease-in-out]' : ''}`}>
-      <style jsx>{`@keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }`}</style>
-      <div className="mx-auto max-w-5xl space-y-5">
+    <div className={`min-h-screen px-4 py-6 ${shake ? 'animate-[shake_0.3s]' : ''}`}>
+      <style jsx>{`@keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }`}</style>
 
-        {/* ============ ROBOT BATTLE ARENA ============ */}
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-          <Card hover={false} className="p-6 relative overflow-hidden">
-            {/* Background glow */}
-            <div className="absolute inset-0 opacity-5" style={{
-              background: `radial-gradient(ellipse at 25% 50%, var(--accent-indigo), transparent 50%), radial-gradient(ellipse at 75% 50%, var(--accent-emerald), transparent 50%)`,
-            }} />
+      <div className="mx-auto max-w-4xl space-y-4">
 
-            {/* Timer bar */}
-            <div className="relative flex items-center gap-3 mb-4">
-              {isRunning && <LiveDot />}
-              <span className="text-xs font-[var(--font-mono)] text-[var(--text-tertiary)]">{formatDuration(elapsed)}</span>
-              <div className="flex-1 h-1 rounded-full bg-[var(--bg-primary)] overflow-hidden">
-                <motion.div
-                  className="h-full rounded-full bg-gradient-to-r from-[var(--accent-indigo)] to-[var(--accent-purple)]"
-                  animate={{ width: `${duration > 0 ? (elapsed / duration) * 100 : 0}%` }}
-                  transition={{ duration: 0.5 }}
-                />
-              </div>
-              <span className="text-sm font-[var(--font-mono)] font-bold text-[var(--text-primary)]">{formatDuration(remaining)}</span>
-              {matchData.tier && <TierBadge tier={matchData.tier} size="sm" />}
-            </div>
+        {/* ========== BATTLE ARENA ========== */}
+        <Card hover={false} className="p-5 relative overflow-hidden">
+          {/* Background arena glow */}
+          <div className="absolute inset-0 opacity-[0.03]" style={{
+            background: 'radial-gradient(ellipse at 25% 50%, var(--accent-indigo), transparent 50%), radial-gradient(ellipse at 75% 50%, var(--accent-emerald), transparent 50%)',
+          }} />
 
-            {/* Health bar */}
-            <div className="relative h-7 rounded-full overflow-hidden bg-[var(--bg-primary)] mb-6">
+          {/* Timer + progress */}
+          <div className="relative flex items-center gap-3 mb-3">
+            {!matchOver && <LiveDot />}
+            <div className="flex-1 h-1.5 rounded-full bg-[var(--bg-primary)] overflow-hidden">
               <motion.div
-                className="absolute inset-y-0 left-0 bg-gradient-to-r from-[var(--accent-indigo)] to-indigo-400"
-                animate={{ width: `${bot1BarPct}%` }}
-                transition={{ duration: 0.5 }}
+                className="h-full rounded-full bg-gradient-to-r from-[var(--accent-indigo)] to-[var(--accent-purple)]"
+                style={{ width: `${timePct}%` }}
               />
-              <motion.div
-                className="absolute inset-y-0 right-0 bg-gradient-to-l from-[var(--accent-emerald)] to-emerald-400"
-                animate={{ width: `${100 - bot1BarPct}%` }}
-                transition={{ duration: 0.5 }}
-              />
-              <div className="absolute left-1/2 top-0 bottom-0 w-px bg-white/20" />
-              <div className="absolute inset-0 flex items-center justify-between px-4">
-                <span className="text-xs font-bold text-white drop-shadow font-[var(--font-mono)]">
-                  {bot1PnlPct >= 0 ? '+' : ''}{bot1PnlPct.toFixed(2)}%
-                </span>
-                <span className="text-xs font-bold text-white drop-shadow font-[var(--font-mono)]">
-                  {bot2PnlPct >= 0 ? '+' : ''}{bot2PnlPct.toFixed(2)}%
-                </span>
-              </div>
+            </div>
+            <span className="text-lg font-black font-[var(--font-mono)]">
+              {Math.floor((duration - elapsed) / 60)}:{String((duration - elapsed) % 60).padStart(2, '0')}
+            </span>
+          </div>
+
+          {/* Health bar */}
+          <div className="relative h-8 rounded-full overflow-hidden bg-[var(--bg-primary)] mb-5">
+            <motion.div className="absolute inset-y-0 left-0 bg-gradient-to-r from-[var(--accent-indigo)] to-indigo-400" animate={{ width: `${bar1}%` }} transition={{ duration: 0.5 }} />
+            <motion.div className="absolute inset-y-0 right-0 bg-gradient-to-l from-[var(--accent-emerald)] to-emerald-400" animate={{ width: `${100 - bar1}%` }} transition={{ duration: 0.5 }} />
+            <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-white/20" />
+            <div className="absolute inset-0 flex items-center justify-between px-4">
+              <span className="text-xs font-black text-white drop-shadow-lg font-[var(--font-mono)]">{bot1PnlPct >= 0 ? '+' : ''}{bot1PnlPct.toFixed(2)}%</span>
+              <span className="text-xs font-black text-white drop-shadow-lg font-[var(--font-mono)]">{bot2PnlPct >= 0 ? '+' : ''}{bot2PnlPct.toFixed(2)}%</span>
+            </div>
+          </div>
+
+          {/* ROBOTS */}
+          <div className="relative flex items-center justify-between px-4 min-h-[180px]">
+            {/* Bot 1 */}
+            <div className="relative flex flex-col items-center">
+              <AnimatePresence>{dmg1 && (
+                <motion.div key="d1" className="absolute -top-4 left-1/2 -translate-x-1/2 z-10 font-black font-[var(--font-mono)] text-[var(--accent-red)]"
+                  style={{ textShadow: '0 0 8px rgba(239,68,68,0.5)' }}
+                  initial={{ opacity: 1, y: 0 }} animate={{ opacity: 0, y: -35 }} transition={{ duration: 0.8 }}
+                >{shake ? 'CRIT! ' : ''}{dmg1}</motion.div>
+              )}</AnimatePresence>
+              <Robot side="left" action={bot1Action} color="#6366F1" pnlPct={bot1PnlPct} />
+              <p className="mt-1 text-sm font-bold truncate max-w-[110px]">{bot1.name}</p>
+              <p className="text-[10px] text-[var(--text-tertiary)] font-[var(--font-mono)]">{bot1.trades}T / {bot1.wins}W</p>
             </div>
 
-            {/* Robot battle */}
-            <div className="relative flex items-end justify-between px-6 h-40">
-              {/* Bot 1 */}
-              <div className="relative flex flex-col items-center">
-                <AnimatePresence>{dmg1 && <DamageNumber key="d1" value={dmg1} side="left" isCrit={shake} />}</AnimatePresence>
-                <Robot side="left" action={bot1Action} color="var(--accent-indigo)" pnl={bot1PnlPct} />
-                <p className="mt-2 text-sm font-bold truncate max-w-[100px]">{bot1.name}</p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-xs font-[var(--font-mono)]" style={{ color: bot1Pnl >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)' }}>
-                    {formatPnl(bot1Pnl)}
+            {/* Center */}
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
+              {matchOver ? (
+                <motion.div initial={{ scale: 0 }} animate={{ scale: [1, 1.15, 1] }} transition={{ duration: 0.6, repeat: Infinity }}>
+                  <span className="text-3xl font-black" style={{ color: '#F59E0B', textShadow: '0 0 20px rgba(245,158,11,0.5)' }}>
+                    {winner ? 'KO!' : 'DRAW'}
                   </span>
-                  <span className="text-[10px] text-[var(--text-tertiary)]">{bot1Trades}T</span>
-                </div>
-              </div>
-
-              {/* Center */}
-              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
-                {isCompleted ? (
-                  <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 300 }}>
-                    <span className="text-2xl font-black text-[var(--accent-amber)]">
-                      {winnerId ? 'KO!' : 'DRAW'}
-                    </span>
-                  </motion.div>
-                ) : combo >= 3 ? (
-                  <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 0.5 }}>
-                    <span className="text-lg font-black text-[var(--accent-amber)]">{combo}x COMBO!</span>
-                  </motion.div>
-                ) : (
-                  <span className="text-lg font-bold text-[var(--text-tertiary)]/30">VS</span>
-                )}
-              </div>
-
-              {/* Bot 2 */}
-              <div className="relative flex flex-col items-center">
-                <AnimatePresence>{dmg2 && <DamageNumber key="d2" value={dmg2} side="right" isCrit={shake} />}</AnimatePresence>
-                <Robot side="right" action={bot2Action} color="var(--accent-emerald)" pnl={bot2PnlPct} />
-                <p className="mt-2 text-sm font-bold truncate max-w-[100px]">{bot2.name}</p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-xs font-[var(--font-mono)]" style={{ color: bot2Pnl >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)' }}>
-                    {formatPnl(bot2Pnl)}
-                  </span>
-                  <span className="text-[10px] text-[var(--text-tertiary)]">{bot2Trades}T</span>
-                </div>
-              </div>
+                </motion.div>
+              ) : combo >= 3 ? (
+                <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 0.4 }}>
+                  <span className="text-xl font-black text-[var(--accent-amber)]">{combo}x</span>
+                </motion.div>
+              ) : (
+                <span className="text-2xl font-black text-white/10">VS</span>
+              )}
             </div>
 
-            {/* Winner = highest % gain */}
-            <p className="text-center text-[10px] text-[var(--text-tertiary)] mt-3 font-[var(--font-mono)]">
-              WINNER = HIGHEST % GAIN
-            </p>
-          </Card>
-        </motion.div>
+            {/* Bot 2 */}
+            <div className="relative flex flex-col items-center">
+              <AnimatePresence>{dmg2 && (
+                <motion.div key="d2" className="absolute -top-4 left-1/2 -translate-x-1/2 z-10 font-black font-[var(--font-mono)] text-[var(--accent-red)]"
+                  style={{ textShadow: '0 0 8px rgba(239,68,68,0.5)' }}
+                  initial={{ opacity: 1, y: 0 }} animate={{ opacity: 0, y: -35 }} transition={{ duration: 0.8 }}
+                >{shake ? 'CRIT! ' : ''}{dmg2}</motion.div>
+              )}</AnimatePresence>
+              <Robot side="right" action={bot2Action} color="#10B981" pnlPct={bot2PnlPct} />
+              <p className="mt-1 text-sm font-bold truncate max-w-[110px]">{bot2.name}</p>
+              <p className="text-[10px] text-[var(--text-tertiary)] font-[var(--font-mono)]">{bot2.trades}T / {bot2.wins}W</p>
+            </div>
+          </div>
 
-        {/* ============ COMPLETED RESULTS ============ */}
-        {isCompleted && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+          {/* Commentary */}
+          <motion.p
+            key={commentary}
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center text-xs text-[var(--text-tertiary)] italic mt-3"
+          >
+            {commentary}
+          </motion.p>
+        </Card>
+
+        {/* ========== RESULTS ========== */}
+        {matchOver && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
             <Card hover={false} className="p-6 text-center">
               <h2 className="text-3xl font-black font-[var(--font-display)] mb-4" style={{
                 background: 'linear-gradient(135deg, var(--accent-indigo), var(--accent-purple), var(--accent-emerald))',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
+                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
               }}>
-                {winnerId === matchData.bot1Id ? `${bot1.name} WINS!` :
-                 winnerId === matchData.bot2Id ? `${bot2.name} WINS!` : 'DRAW!'}
+                {winner === 1 ? `${bot1.name} WINS!` : winner === 2 ? `${bot2.name} WINS!` : 'DRAW!'}
               </h2>
               <div className="flex justify-center gap-12 mb-6">
                 <div>
-                  <p className="text-xs text-[var(--text-tertiary)] mb-1">{bot1.name}</p>
-                  <p className="text-3xl font-black font-[var(--font-mono)] text-[var(--accent-indigo)]">{Math.round(bot1Score || 0)}</p>
-                  <p className="text-sm font-[var(--font-mono)]" style={{ color: bot1Pnl >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)' }}>{formatPnl(bot1Pnl)}</p>
+                  <p className="text-xs text-[var(--text-tertiary)]">{bot1.name}</p>
+                  <p className="text-2xl font-black font-[var(--font-mono)] text-[var(--accent-indigo)]">{formatPnl(bot1.pnl)}</p>
+                  <p className="text-xs text-[var(--text-tertiary)]">{bot1.trades} trades ({bot1.wins}W/{bot1.losses}L)</p>
                 </div>
                 <div className="self-center text-[var(--text-tertiary)]">vs</div>
                 <div>
-                  <p className="text-xs text-[var(--text-tertiary)] mb-1">{bot2.name}</p>
-                  <p className="text-3xl font-black font-[var(--font-mono)] text-[var(--accent-emerald)]">{Math.round(bot2Score || 0)}</p>
-                  <p className="text-sm font-[var(--font-mono)]" style={{ color: bot2Pnl >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)' }}>{formatPnl(bot2Pnl)}</p>
+                  <p className="text-xs text-[var(--text-tertiary)]">{bot2.name}</p>
+                  <p className="text-2xl font-black font-[var(--font-mono)] text-[var(--accent-emerald)]">{formatPnl(bot2.pnl)}</p>
+                  <p className="text-xs text-[var(--text-tertiary)]">{bot2.trades} trades ({bot2.wins}W/{bot2.losses}L)</p>
                 </div>
               </div>
               <div className="flex justify-center gap-3">
-                <Button onClick={() => window.location.href = '/matches/live'}>Play Again</Button>
-                <Button variant="secondary" onClick={() => window.location.href = `/matches/${matchId}/results`}>Full Breakdown</Button>
+                <Button onClick={() => router.push('/matches/live')}>Play Again</Button>
+                <Button variant="secondary" onClick={() => router.push('/social')}>Challenge a Friend</Button>
               </div>
             </Card>
           </motion.div>
         )}
 
-        {/* ============ CHART + FEED ============ */}
-        <div className="grid gap-4 lg:grid-cols-3">
-          <motion.div className="lg:col-span-2" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-            <Card hover={false} className="h-[320px]">
-              <p className="mb-2 text-sm font-medium text-[var(--text-secondary)]">P&L Over Time</p>
-              {pnlHistory.length > 0 ? (
-                <ResponsiveContainer width="100%" height="88%">
-                  <LineChart data={pnlHistory}>
-                    <XAxis dataKey="elapsed" tick={{ fill: 'var(--text-tertiary)', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => formatDuration(v)} />
-                    <YAxis tick={{ fill: 'var(--text-tertiary)', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: 12, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: 12 }}
-                      formatter={(value: any, name: any) => [formatPnl(Number(value)), name === 'bot1' ? bot1.name : bot2.name]}
-                    />
-                    <Line type="monotone" dataKey="bot1" stroke="var(--accent-indigo)" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="bot2" stroke="var(--accent-emerald)" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-[80%] text-[var(--text-tertiary)] text-sm">
-                  {isRunning ? 'Collecting data...' : 'No chart data available'}
-                </div>
-              )}
-            </Card>
-          </motion.div>
-
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-            <Card hover={false} className="flex h-[320px] flex-col">
-              <p className="mb-2 text-sm font-medium text-[var(--text-secondary)]">Trade Feed</p>
-              <div ref={tradeFeedRef} className="flex-1 space-y-1 overflow-y-auto pr-1">
-                {trades.length === 0 && (
-                  <p className="py-8 text-center text-sm text-[var(--text-tertiary)]">
-                    {isRunning ? 'Waiting for trades...' : 'No trades recorded'}
-                  </p>
-                )}
-                {trades.slice(-30).map((trade, i) => {
-                  const isBot1 = trade.botId === (matchData.bot1?.id || matchData.bot1Id);
-                  const botName = isBot1 ? bot1.name : bot2.name;
-                  const isClose = trade.type === 'CLOSE';
-                  const isProfit = trade.pnl != null && trade.pnl > 0;
-                  return (
-                    <motion.div
-                      key={i}
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      className="flex items-center gap-2 rounded-lg bg-[var(--bg-secondary)] px-2.5 py-1.5 text-[11px]"
-                    >
-                      <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{
-                        backgroundColor: isClose ? (isProfit ? 'var(--accent-emerald)' : 'var(--accent-red)') : 'var(--accent-indigo)',
-                      }} />
-                      <span className="font-medium text-[var(--text-primary)] truncate">{botName}</span>
-                      <span className="text-[var(--text-tertiary)]">{trade.symbol}</span>
-                      {trade.pnl != null && (
-                        <span className="ml-auto font-[var(--font-mono)] font-bold" style={{ color: trade.pnl >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)' }}>
-                          {formatPnl(trade.pnl)}
-                        </span>
-                      )}
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </Card>
-          </motion.div>
-        </div>
-
-        {/* ============ BOTTOM BAR ============ */}
-        <Card hover={false}>
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-2 text-[var(--text-secondary)]">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
-              <span className="font-[var(--font-mono)] text-sm">{spectatorCount} watching</span>
-            </div>
-            {!isCompleted && (
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-[var(--text-secondary)]">Who wins?</span>
-                <Button variant={prediction === 'bot1' ? 'primary' : 'secondary'} size="sm" onClick={() => setPrediction('bot1')}>{bot1.name}</Button>
-                <Button
-                  variant={prediction === 'bot2' ? 'primary' : 'secondary'}
-                  size="sm"
-                  onClick={() => setPrediction('bot2')}
-                  className={prediction === 'bot2' ? 'bg-gradient-to-br from-[var(--accent-emerald)] to-emerald-600' : ''}
-                >{bot2.name}</Button>
-              </div>
-            )}
+        {/* ========== TRADE FEED ========== */}
+        <Card hover={false} className="h-[200px] flex flex-col">
+          <p className="text-sm font-medium text-[var(--text-secondary)] mb-2">Trade Feed</p>
+          <div ref={tradeFeedRef} className="flex-1 overflow-y-auto space-y-1">
+            {trades.length === 0 && <p className="text-center text-xs text-[var(--text-tertiary)] py-8">Waiting for trades...</p>}
+            {trades.map((t, i) => (
+              <motion.div key={i} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
+                className="flex items-center gap-2 rounded-lg bg-[var(--bg-secondary)] px-2.5 py-1.5 text-[11px]"
+              >
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: t.pnl > 0 ? '#10B981' : t.pnl < 0 ? '#EF4444' : '#6366F1' }} />
+                <span className="font-medium">{t.bot === 1 ? bot1.name : bot2.name}</span>
+                <span className="text-[var(--text-tertiary)]">{t.action} {t.symbol}</span>
+                {t.pnl != null && <span className="ml-auto font-[var(--font-mono)] font-bold" style={{ color: t.pnl >= 0 ? '#10B981' : '#EF4444' }}>{formatPnl(t.pnl)}</span>}
+              </motion.div>
+            ))}
           </div>
         </Card>
+
+        {/* ========== PREDICTION ========== */}
+        {!matchOver && (
+          <Card hover={false}>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-[var(--text-secondary)]">Who will win?</span>
+              <div className="flex gap-2">
+                <Button size="sm" variant={prediction === 1 ? 'primary' : 'secondary'} onClick={() => setPrediction(1)}>{bot1.name}</Button>
+                <Button size="sm" variant={prediction === 2 ? 'primary' : 'secondary'} onClick={() => setPrediction(2)}
+                  className={prediction === 2 ? 'bg-gradient-to-br from-[var(--accent-emerald)] to-emerald-600' : ''}
+                >{bot2.name}</Button>
+              </div>
+            </div>
+          </Card>
+        )}
       </div>
     </div>
   );
+}
+
+function LiveDot() {
+  return <span className="w-2 h-2 rounded-full bg-[var(--accent-red)] live-dot" />;
 }
