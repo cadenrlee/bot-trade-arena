@@ -1,83 +1,43 @@
 import { MatchEngine, type MatchConfig, type BotConnection, type MarketTick } from '../engine/match';
 import { eloToTier } from '../engine/scoring';
 import { templateBotRunner } from './templateBots';
-import { houseBotService } from './houseBots';
-import { MarketRecorder } from './marketRecorder';
 import { config } from '../lib/config';
 import prisma from '../lib/prisma';
 import crypto from 'crypto';
 
 /**
- * Async Match Service
+ * Async Match Service — enables challenges and after-hours play.
  *
- * The key to making head-to-head work:
- *   1. Record real market data during trading hours
- *   2. Player A plays against that data → gets a score
- *   3. Player B plays the SAME data → gets a score
- *   4. Compare scores → winner determined
+ * How it works:
+ *   1. Generate or use recorded market data (a chunk of price ticks)
+ *   2. Run the bot against that data at accelerated speed
+ *   3. Score the result
+ *   4. For challenges: both players replay the same data, compare scores
  *
- * Benefits:
- *   - No scheduling needed — play when you want
- *   - Fair — exact same market conditions
- *   - Works off-hours — replay recorded data
- *   - Enables challenges — "beat my score on this data"
+ * For bots without server-side strategy (external bots), we use a
+ * momentum-based auto-strategy that simulates reasonable trading behavior
+ * based on the bot's ELO (higher ELO = better trading logic).
  */
 
-interface AsyncMatchResult {
-  matchId: string;
-  chunkId: string;
-  botId: string;
-  userId: string;
-  score: any; // ScoreBreakdown
-  completedAt: Date;
-}
-
 export class AsyncMatchService {
-  /**
-   * Start an async match — bot plays against recorded market data.
-   * Returns the score immediately (match runs at accelerated speed).
-   */
-  async playAsync(
-    botId: string,
-    chunkId?: string,
-    sessionType?: string,
-  ): Promise<{
-    matchId: string;
-    score: any;
-    error?: string;
+
+  async playAsync(botId: string, chunkTicks?: MarketTick[]): Promise<{
+    matchId: string; score: any; error?: string;
   }> {
     const bot = await prisma.bot.findUnique({ where: { id: botId } });
     if (!bot) return { matchId: '', score: null, error: 'Bot not found' };
 
-    // Get market data chunk
-    let chunk;
-    if (chunkId) {
-      const dbChunk = await prisma.marketChunk.findUnique({ where: { id: chunkId } });
-      if (!dbChunk) return { matchId: '', score: null, error: 'Market data not found' };
-      chunk = {
-        id: dbChunk.id,
-        symbols: JSON.parse(dbChunk.symbols),
-        ticks: JSON.parse(dbChunk.tickData) as MarketTick[],
-        sessionType: dbChunk.sessionType,
-      };
-    } else {
-      chunk = await MarketRecorder.getRandomChunk(sessionType || 'MARKET_HOURS');
-      if (!chunk) {
-        // No recorded data — generate synthetic
-        chunk = this.generateSyntheticChunk();
-      }
-    }
+    // Get or generate market data
+    const ticks = chunkTicks || this.generateTicks();
+    const symbols = [...new Set(ticks.map(t => t.symbol))];
+    const duration = Math.min(Math.floor(ticks.length / Math.max(symbols.length, 1)), 300);
 
-    // Create match engine (bot vs phantom — we only care about bot's score)
+    if (duration < 10) return { matchId: '', score: null, error: 'Not enough market data' };
+
     const matchId = crypto.randomBytes(12).toString('hex');
-    const duration = Math.min(chunk.ticks.length, 300); // Max 5 min
 
     const matchConfig: MatchConfig = {
-      matchId,
-      mode: 'ASYNC',
-      format: 'LADDER',
-      duration,
-      symbols: chunk.symbols,
+      matchId, mode: 'ASYNC', format: 'LADDER', duration, symbols,
       startingCapital: config.match.startingCapital,
       maxPositionPct: config.match.maxPositionPct,
       maxOpenPositions: config.match.maxOpenPositions,
@@ -85,26 +45,12 @@ export class AsyncMatchService {
       tier: eloToTier(bot.elo),
     };
 
-    const botConn: BotConnection = {
-      botId: bot.id,
-      userId: bot.userId,
-      apiKey: bot.apiKey,
-      elo: bot.elo,
-      ws: null,
-    };
-
-    // Phantom bot (does nothing — just a placeholder)
-    const phantomConn: BotConnection = {
-      botId: 'phantom',
-      userId: 'phantom',
-      apiKey: 'phantom',
-      elo: bot.elo,
-      ws: null,
-    };
+    const botConn: BotConnection = { botId: bot.id, userId: bot.userId, apiKey: bot.apiKey, elo: bot.elo, ws: null };
+    const phantomConn: BotConnection = { botId: 'phantom', userId: 'phantom', apiKey: 'x', elo: bot.elo, ws: null };
 
     const engine = new MatchEngine(matchConfig, botConn, phantomConn);
 
-    // Check if bot is a template bot
+    // Determine strategy
     const isTemplate = bot.language.startsWith('template:');
     const templateId = isTemplate ? bot.language.replace('template:', '') : null;
     let templateParams: Record<string, number> = {};
@@ -113,173 +59,213 @@ export class AsyncMatchService {
     }
     if (isTemplate) templateBotRunner.init(bot.id);
 
-    // Run match manually (accelerated — no real-time waiting)
-    engine.startManual();
+    // For non-template bots, use auto-strategy based on ELO
+    const autoStrategy = !isTemplate ? this.createAutoStrategy(bot.elo) : null;
 
-    // Register event listener BEFORE processing ticks to avoid race condition
+    // Register match:end BEFORE ticks
     let matchResult: any = null;
     engine.on('match:end', (result) => { matchResult = result; });
+    engine.startManual();
 
-    // Feed ticks and let bot trade
-    let tickIndex = 0;
-    for (const tick of chunk.ticks) {
-      engine.updatePrice(tick);
+    // Feed ticks
+    let tickIdx = 0;
+    const ticksPerSecond = Math.max(1, Math.floor(ticks.length / duration));
 
-      // Drive template bot
-      if (isTemplate && templateId) {
-        templateBotRunner.onTick(engine, bot.id, templateId, templateParams, tick);
+    for (let sec = 0; sec < duration; sec++) {
+      // Feed this second's ticks
+      for (let t = 0; t < ticksPerSecond && tickIdx < ticks.length; t++, tickIdx++) {
+        const tick = ticks[tickIdx];
+        engine.updatePrice(tick);
+
+        // Drive strategy
+        if (isTemplate && templateId) {
+          templateBotRunner.onTick(engine, bot.id, templateId, templateParams, tick);
+        } else if (autoStrategy) {
+          autoStrategy(engine, bot.id, tick);
+        }
       }
-
-      tickIndex++;
-      if (tickIndex >= duration) break;
-
-      // Advance engine clock every ~1 tick per simulated second
-      if (tickIndex % Math.max(1, Math.floor(chunk.ticks.length / duration)) === 0) {
-        engine.manualTick();
-      }
-    }
-
-    // Force remaining ticks
-    while (engine.getStatus() === 'running' && engine.getElapsed() < duration) {
       engine.manualTick();
     }
 
-    // Final ticks to trigger end
-    for (let i = 0; i < 10 && engine.getStatus() === 'running'; i++) {
-      engine.manualTick();
-    }
+    // Ensure match ends
+    while (engine.getStatus() === 'running') engine.manualTick();
 
     if (isTemplate) templateBotRunner.cleanup(bot.id);
 
-    if (!matchResult) {
-      return { matchId, score: null, error: 'Match did not produce results' };
-    }
-
+    if (!matchResult) return { matchId, score: null, error: 'Match produced no results' };
     return { matchId, score: matchResult.bot1.score };
   }
 
-  /**
-   * Create a challenge — player A's score is recorded, player B plays later
-   */
-  async createChallenge(
-    challengerBotId: string,
-    challengerUserId: string,
-    targetUserId: string,
-    chunkId?: string,
-  ): Promise<{ challengeId: string; score: any; error?: string }> {
-    // Play the match for the challenger
-    const result = await this.playAsync(challengerBotId, chunkId);
+  async createChallenge(challengerBotId: string, challengerUserId: string, targetUserId: string): Promise<{
+    challengeId: string; score: any; error?: string;
+  }> {
+    // Generate market data for the challenge
+    const ticks = this.generateTicks();
+
+    // Play for the challenger
+    const result = await this.playAsync(challengerBotId, ticks);
     if (result.error) return { challengeId: '', score: null, error: result.error };
 
-    // Save the challenge — store synthetic chunk data so defender replays the same data
-    const challengeData: any = {
-      challengerUserId,
-      challengerBotId,
-      targetUserId,
-      chunkId: chunkId || 'synthetic',
-      challengerScore: result.score.compositeScore,
-      challengerScoreData: JSON.stringify(result.score),
-      status: 'PENDING',
-    };
-
-    // If no explicit chunkId was provided, we used synthetic data.
-    // Store it so the defender replays the exact same ticks.
-    if (!chunkId) {
-      challengeData.syntheticChunkData = JSON.stringify(this.lastSyntheticChunk);
-    }
-
-    const challenge = await prisma.headToHead.create({ data: challengeData });
+    // Save challenge with the market data so defender can replay the same thing
+    const challenge = await prisma.headToHead.create({
+      data: {
+        challengerUserId,
+        challengerBotId,
+        targetUserId,
+        chunkId: 'synthetic',
+        challengerScore: result.score?.compositeScore || 0,
+        challengerScoreData: JSON.stringify(result.score),
+        syntheticChunkData: JSON.stringify(ticks), // Store the exact ticks
+        status: 'PENDING',
+      },
+    });
 
     // Notify target
+    const challenger = await prisma.user.findUnique({ where: { id: challengerUserId }, select: { username: true } });
     await prisma.notification.create({
       data: {
         userId: targetUserId,
         type: 'CHALLENGE',
-        title: 'New Challenge!',
-        message: `Someone challenged you! Their score: ${result.score.compositeScore}. Can you beat it?`,
-        data: JSON.stringify({ challengeId: challenge.id, score: result.score.compositeScore }),
+        title: `${challenger?.username || 'Someone'} challenged you!`,
+        message: `Their score: ${result.score?.compositeScore || 0}. Beat it!`,
+        data: JSON.stringify({ challengeId: challenge.id }),
       },
     });
 
     return { challengeId: challenge.id, score: result.score };
   }
 
-  /**
-   * Accept and play a challenge
-   */
-  async acceptChallenge(
-    challengeId: string,
-    defenderBotId: string,
-    defenderUserId: string,
-  ): Promise<{ winner: string; challengerScore: number; defenderScore: number; error?: string }> {
+  async acceptChallenge(challengeId: string, defenderBotId: string, defenderUserId: string): Promise<{
+    winner: string; challengerScore: number; defenderScore: number; error?: string;
+  }> {
     const challenge = await prisma.headToHead.findUnique({ where: { id: challengeId } });
     if (!challenge) return { winner: '', challengerScore: 0, defenderScore: 0, error: 'Challenge not found' };
-    if (challenge.status !== 'PENDING') return { winner: '', challengerScore: 0, defenderScore: 0, error: 'Challenge already completed' };
+    if (challenge.status !== 'PENDING') return { winner: '', challengerScore: 0, defenderScore: 0, error: 'Already completed' };
 
-    // Play the same data — for synthetic chunks, replay the stored data
-    let replayChunkId: string | undefined = undefined;
-    if (challenge.chunkId !== 'synthetic') {
-      replayChunkId = challenge.chunkId;
-    } else if ((challenge as any).syntheticChunkData) {
-      // Store the synthetic chunk as a temporary market chunk so playAsync can find it
-      const syntheticData = JSON.parse((challenge as any).syntheticChunkData);
-      const tempChunk = await prisma.marketChunk.create({
-        data: {
-          symbols: JSON.stringify(syntheticData.symbols),
-          tickData: JSON.stringify(syntheticData.ticks),
-          sessionType: syntheticData.sessionType || 'CRYPTO_24H',
-          tickCount: syntheticData.ticks.length,
-          startTime: new Date(),
-          endTime: new Date(),
-        },
-      });
-      replayChunkId = tempChunk.id;
+    // Replay the SAME market data
+    let ticks: MarketTick[];
+    if (challenge.syntheticChunkData) {
+      ticks = JSON.parse(challenge.syntheticChunkData);
+    } else {
+      ticks = this.generateTicks(); // Fallback — not ideal but better than crashing
     }
 
-    const result = await this.playAsync(defenderBotId, replayChunkId);
+    const result = await this.playAsync(defenderBotId, ticks);
     if (result.error) return { winner: '', challengerScore: 0, defenderScore: 0, error: result.error };
 
     const challengerScore = challenge.challengerScore;
-    const defenderScore = result.score.compositeScore;
+    const defenderScore = result.score?.compositeScore || 0;
     const winner = defenderScore > challengerScore ? defenderUserId :
                    challengerScore > defenderScore ? challenge.challengerUserId : 'DRAW';
 
-    // Update challenge
     await prisma.headToHead.update({
       where: { id: challengeId },
       data: {
-        defenderUserId,
-        defenderBotId,
-        defenderScore,
-        defenderScoreData: JSON.stringify(result.score),
+        defenderUserId, defenderBotId,
+        defenderScore, defenderScoreData: JSON.stringify(result.score),
         winnerId: winner === 'DRAW' ? null : winner,
-        status: 'COMPLETED',
-        completedAt: new Date(),
+        status: 'COMPLETED', completedAt: new Date(),
       },
     });
 
     return { winner, challengerScore, defenderScore };
   }
 
-  private lastSyntheticChunk: any = null;
+  /**
+   * Auto-strategy for bots without server-side logic.
+   * Uses momentum + mean reversion, quality scales with ELO.
+   */
+  private createAutoStrategy(elo: number) {
+    const history: Map<string, number[]> = new Map();
+    const positions: Map<string, { side: string; entry: number; posId?: string }> = new Map();
+    const skill = Math.min(1, Math.max(0.2, (elo - 800) / 1200)); // 0.2 at 800 ELO, 1.0 at 2000
+    let lastTradeTime = -10;
 
-  private generateSyntheticChunk() {
+    return (engine: MatchEngine, botId: string, tick: MarketTick) => {
+      const { symbol, price } = tick;
+      const elapsed = engine.getElapsed();
+
+      if (!history.has(symbol)) history.set(symbol, []);
+      const h = history.get(symbol)!;
+      h.push(price);
+      if (h.length > 30) h.shift();
+      if (h.length < 10) return;
+      if (elapsed - lastTradeTime < 4) return;
+
+      const mean = h.reduce((s, p) => s + p, 0) / h.length;
+      const momentum = ((price - h[0]) / h[0]) * 100;
+      const existing = positions.get(symbol);
+
+      // Close positions
+      if (existing) {
+        const pnlPct = existing.side === 'LONG'
+          ? (price - existing.entry) / existing.entry
+          : (existing.entry - price) / existing.entry;
+
+        // Take profit or stop loss (better players have tighter stops)
+        const tp = 0.002 * (1 + skill);
+        const sl = 0.003 / skill;
+
+        if (pnlPct > tp || pnlPct < -sl || (elapsed - lastTradeTime > 20 && Math.random() < 0.1)) {
+          const result = engine.processOrder(botId, {
+            symbol, side: existing.side as 'LONG' | 'SHORT', action: 'CLOSE',
+            quantity: 0.1, positionId: existing.posId,
+          });
+          if (result.success) { positions.delete(symbol); lastTradeTime = elapsed; }
+        }
+        return;
+      }
+
+      // Open positions based on skill-weighted signals
+      const tradeChance = 0.05 + skill * 0.08; // Higher ELO = more active
+      if (Math.random() > tradeChance) return;
+
+      // Better players read momentum more accurately
+      const correctRead = Math.random() < (0.4 + skill * 0.3); // 40-70% accuracy based on ELO
+      let side: 'LONG' | 'SHORT';
+
+      if (momentum > 0.05) {
+        side = correctRead ? 'LONG' : 'SHORT';
+      } else if (momentum < -0.05) {
+        side = correctRead ? 'SHORT' : 'LONG';
+      } else {
+        // Mean reversion in ranging market
+        side = price < mean ? 'LONG' : 'SHORT';
+        if (!correctRead) side = side === 'LONG' ? 'SHORT' : 'LONG';
+      }
+
+      const result = engine.processOrder(botId, {
+        symbol, side, action: 'OPEN', quantity: 0.08 + skill * 0.04,
+      });
+      if (result.success && result.tradeId) {
+        positions.set(symbol, { side, entry: price, posId: result.tradeId });
+        lastTradeTime = elapsed;
+      }
+    };
+  }
+
+  private generateTicks(): MarketTick[] {
     const symbols = config.symbols.map(s => s.toUpperCase());
     const ticks: MarketTick[] = [];
     const prices: Record<string, number> = { BTCUSDT: 67500, ETHUSDT: 3200, SOLUSDT: 145 };
+    let momentum = 0;
 
-    for (let i = 0; i < 300; i++) {
+    for (let i = 0; i < 900; i++) { // 300 seconds * 3 symbols
+      momentum = momentum * 0.95 + (Math.random() - 0.5) * 0.0005;
       for (const sym of symbols) {
         const p = prices[sym] || 100;
-        const change = (Math.random() - 0.5) * 0.001;
-        prices[sym] = p * (1 + change);
-        ticks.push({ symbol: sym, price: Math.round(prices[sym] * 100) / 100, volume: Math.random(), timestamp: Date.now() + i * 1000 });
+        const vol = sym === 'BTCUSDT' ? 0.0003 : sym === 'ETHUSDT' ? 0.0004 : 0.0006;
+        const change = momentum + (Math.random() - 0.5) * vol * 2;
+        prices[sym] = Math.max(p * 0.9, p * (1 + change));
+        ticks.push({
+          symbol: sym,
+          price: Math.round(prices[sym] * 100) / 100,
+          volume: Math.random() * 5,
+          timestamp: Date.now() + Math.floor(i / symbols.length) * 1000,
+        });
       }
     }
-
-    const chunk = { id: 'synthetic', symbols, ticks, sessionType: 'CRYPTO_24H' };
-    this.lastSyntheticChunk = chunk;
-    return chunk;
+    return ticks;
   }
 }
 

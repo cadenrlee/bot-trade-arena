@@ -84,7 +84,7 @@ router.post('/challenge/:id/accept', authMiddleware, async (req: Request, res: R
 // GET /api/social/challenges — my pending challenges
 router.get('/challenges', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const [incoming, outgoing] = await Promise.all([
+    const [incomingRaw, outgoingRaw] = await Promise.all([
       prisma.headToHead.findMany({
         where: { targetUserId: req.user!.userId, status: 'PENDING' },
         orderBy: { createdAt: 'desc' },
@@ -95,6 +95,29 @@ router.get('/challenges', authMiddleware, async (req: Request, res: Response) =>
         take: 20,
       }),
     ]);
+
+    // Hydrate with usernames
+    const userIds = [...new Set([
+      ...incomingRaw.map(c => c.challengerUserId),
+      ...outgoingRaw.map(c => c.targetUserId),
+      ...outgoingRaw.filter(c => c.defenderUserId).map(c => c.defenderUserId!),
+    ])];
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, username: true, elo: true, tier: true },
+    });
+    const userMap = new Map(users.map(u => [u.id, u]));
+
+    const incoming = incomingRaw.map(c => ({
+      ...c, syntheticChunkData: undefined, // Don't send huge data to client
+      challenger: userMap.get(c.challengerUserId),
+    }));
+    const outgoing = outgoingRaw.map(c => ({
+      ...c, syntheticChunkData: undefined,
+      target: userMap.get(c.targetUserId),
+      defender: c.defenderUserId ? userMap.get(c.defenderUserId) : null,
+    }));
+
     res.json({ incoming, outgoing });
   } catch (err) {
     console.error('Get challenges error:', err);

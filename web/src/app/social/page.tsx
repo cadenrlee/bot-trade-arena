@@ -280,11 +280,17 @@ export default function SocialPage() {
               <h2 className="text-lg font-semibold">Incoming Challenges</h2>
               {challenges.incoming.map((c: any) => (
                 <Card key={c.id} className="flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold">Challenge from opponent</p>
-                    <p className="text-sm text-[var(--text-secondary)]">
-                      Their score: <span className="font-[var(--font-mono)] text-[var(--accent-amber)]">{c.challengerScore}</span>
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[var(--accent-indigo)] to-[var(--accent-purple)] flex items-center justify-center text-white font-bold text-sm">
+                      {c.challenger?.username?.[0]?.toUpperCase() || '?'}
+                    </div>
+                    <div>
+                      <p className="font-semibold">{c.challenger?.username || 'Someone'} challenged you!</p>
+                      <p className="text-sm text-[var(--text-secondary)]">
+                        Their score: <span className="font-[var(--font-mono)] text-[var(--accent-amber)] font-bold">{Math.round(c.challengerScore)}</span>
+                        <span className="text-[var(--text-tertiary)] ml-2">Can you beat it?</span>
+                      </p>
+                    </div>
                   </div>
                   <Button onClick={() => acceptChallenge(c.id)} loading={sending}>
                     Accept & Play
@@ -299,31 +305,33 @@ export default function SocialPage() {
               <h2 className="text-lg font-semibold">Your Challenges</h2>
               {challenges.outgoing.map((c: any) => (
                 <Card key={c.id} hover={false} className="flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold">
-                      {c.status === 'COMPLETED' ? (
-                        c.winnerId === user?.id ? (
-                          <span className="text-[var(--accent-emerald)]">You won!</span>
-                        ) : (
-                          <span className="text-[var(--accent-red)]">You lost</span>
-                        )
-                      ) : (
-                        <span className="text-[var(--accent-amber)]">Pending...</span>
-                      )}
-                    </p>
-                    <p className="text-sm text-[var(--text-secondary)]">
-                      Your score: <span className="font-[var(--font-mono)]">{c.challengerScore}</span>
-                      {c.defenderScore != null && (
-                        <> vs <span className="font-[var(--font-mono)]">{c.defenderScore}</span></>
-                      )}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      'w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm',
+                      c.status === 'COMPLETED' && c.winnerId === user?.id ? 'bg-[var(--accent-emerald)]' :
+                      c.status === 'COMPLETED' ? 'bg-[var(--accent-red)]' : 'bg-[var(--bg-tertiary)]'
+                    )}>
+                      {c.status === 'COMPLETED' ? (c.winnerId === user?.id ? 'W' : 'L') : '?'}
+                    </div>
+                    <div>
+                      <p className="font-semibold">
+                        vs {c.target?.username || 'Unknown'}
+                        {c.status === 'COMPLETED' && (
+                          c.winnerId === user?.id
+                            ? <span className="text-[var(--accent-emerald)] ml-2">You won!</span>
+                            : c.winnerId ? <span className="text-[var(--accent-red)] ml-2">You lost</span>
+                            : <span className="text-[var(--text-tertiary)] ml-2">Draw</span>
+                        )}
+                      </p>
+                      <p className="text-sm text-[var(--text-secondary)]">
+                        You: <span className="font-[var(--font-mono)] font-bold">{Math.round(c.challengerScore)}</span>
+                        {c.defenderScore != null && (
+                          <> — Them: <span className="font-[var(--font-mono)] font-bold">{Math.round(c.defenderScore)}</span></>
+                        )}
+                        {c.status === 'PENDING' && <span className="text-[var(--accent-amber)] ml-2">Waiting for response...</span>}
+                      </p>
+                    </div>
                   </div>
-                  <span className={cn(
-                    'text-xs font-medium px-3 py-1 rounded-full',
-                    c.status === 'COMPLETED' ? 'bg-[var(--accent-emerald)]/10 text-[var(--accent-emerald)]' : 'bg-[var(--accent-amber)]/10 text-[var(--accent-amber)]',
-                  )}>
-                    {c.status}
-                  </span>
                 </Card>
               ))}
             </>

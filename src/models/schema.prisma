@@ -588,15 +588,16 @@ model HeadToHead {
   targetUserId      String
   defenderUserId    String?
   defenderBotId     String?
-  chunkId           String    // MarketChunk ID or "synthetic"
+  chunkId           String    @default("synthetic")
 
   challengerScore     Float
-  challengerScoreData String?   // JSON ScoreBreakdown
+  challengerScoreData String?
   defenderScore       Float?
-  defenderScoreData   String?   // JSON ScoreBreakdown
+  defenderScoreData   String?
+  syntheticChunkData  String?   // Stored synthetic market data for fair replay
   winnerId            String?
 
-  status            String    @default("PENDING") // PENDING, COMPLETED, EXPIRED
+  status            String    @default("PENDING")
   createdAt         DateTime  @default(now())
   completedAt       DateTime?
 }
