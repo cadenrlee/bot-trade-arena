@@ -6,15 +6,16 @@ import { useAuthStore } from '@/stores/auth';
 import { cn } from '@/lib/utils';
 import { NotificationBell } from '@/components/ui/notification-bell';
 
-// Pages that should NOT show the sidebar (full-screen experiences)
-const FULL_SCREEN_PAGES = ['/', '/auth/login', '/auth/register', '/auth/forgot-password', '/auth/reset-password'];
+// Auth pages always hide sidebar
+const AUTH_PAGES = ['/auth/login', '/auth/register', '/auth/forgot-password', '/auth/reset-password'];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const loadFromStorage = useAuthStore((s) => s.loadFromStorage);
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
   const pathname = usePathname();
-  const isFullScreen = FULL_SCREEN_PAGES.includes(pathname);
+  const isAuthPage = AUTH_PAGES.includes(pathname);
+  const isFullScreen = isAuthPage || (pathname === '/' && !user);
 
   useEffect(() => {
     loadFromStorage();
@@ -44,6 +45,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <NavLink href="/leaderboards" icon="🏆" label="Rankings" />
           <NavLink href="/feed" icon="📢" label="Feed" />
           <NavLink href="/social" icon="👥" label="Friends" />
+          <NavLink href="/clans" icon="⚔" label="Clans" />
           {user && <NavLink href="/bots" icon="🤖" label="My Bots" />}
           {user && <NavLink href="/bots/connect" icon="⚡" label="Go Ranked" highlight />}
         </nav>

@@ -20,7 +20,7 @@ export default function LoginPage() {
     setError('');
     try {
       await login(loginField, password);
-      router.push('/');
+      router.replace('/');
     } catch (err: any) {
       setError(err?.message || 'Login failed. Check your credentials.');
     }

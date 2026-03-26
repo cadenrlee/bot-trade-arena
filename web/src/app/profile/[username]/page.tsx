@@ -243,11 +243,11 @@ export default function ProfilePage() {
       if (following) {
         await api.unfollowUser(username);
         setFollowing(false);
-        setProfile((p: any) => ({ ...p, followers: Math.max(0, (p.followers || 0) - 1) }));
+        setProfile((p: any) => ({ ...p, followersCount: Math.max(0, (p.followersCount || 0) - 1) }));
       } else {
         await api.followUser(username);
         setFollowing(true);
-        setProfile((p: any) => ({ ...p, followers: (p.followers || 0) + 1 }));
+        setProfile((p: any) => ({ ...p, followersCount: (p.followersCount || 0) + 1 }));
       }
     } catch { /* empty */ }
     setFollowLoading(false);
@@ -325,11 +325,11 @@ export default function ProfilePage() {
               )}
               <div className="flex items-center gap-4 text-sm">
                 <span>
-                  <span className="font-bold text-[var(--text-primary)]">{profile.followers ?? 0}</span>
+                  <span className="font-bold text-[var(--text-primary)]">{profile.followersCount ?? 0}</span>
                   <span className="text-[var(--text-tertiary)] ml-1">followers</span>
                 </span>
                 <span>
-                  <span className="font-bold text-[var(--text-primary)]">{profile.following ?? 0}</span>
+                  <span className="font-bold text-[var(--text-primary)]">{profile.followingCount ?? 0}</span>
                   <span className="text-[var(--text-tertiary)] ml-1">following</span>
                 </span>
               </div>

@@ -33,6 +33,9 @@ export default function SocialPage() {
   const [challengeTarget, setChallengeTarget] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState('');
+  const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -71,18 +74,34 @@ export default function SocialPage() {
         method: 'POST',
         body: JSON.stringify({ username }),
       });
+      setSentRequests((prev) => new Set(prev).add(username));
       setMessage(`Friend request sent to ${username}!`);
-      setTimeout(() => setMessage(''), 3000);
+      setTimeout(() => setMessage(''), 5000);
     } catch (err: any) {
       setMessage(err.message || 'Failed to send request');
+      setTimeout(() => setMessage(''), 5000);
     }
   };
 
   const acceptRequest = async (id: string) => {
+    setAcceptingId(id);
     try {
       await api.request(`/api/social/friend-request/${id}/accept`, { method: 'POST' });
+      setMessage('Friend request accepted!');
+      setTimeout(() => setMessage(''), 5000);
       fetchData();
     } catch { /* empty */ }
+    setAcceptingId(null);
+  };
+
+  const rejectRequest = async (id: string) => {
+    setRejectingId(id);
+    // Optimistic update: remove from list immediately
+    setPendingRequests((prev) => prev.filter((r: any) => r.id !== id));
+    try {
+      await api.request(`/api/social/friend-request/${id}/reject`, { method: 'POST' });
+    } catch { /* empty */ }
+    setRejectingId(null);
   };
 
   // Challenge replay state
@@ -318,13 +337,12 @@ export default function SocialPage() {
                       <TierBadge tier={r.from?.tier} size="sm" />
                     </div>
                     <div className="flex gap-2">
-                      <Button size="sm" onClick={() => acceptRequest(r.id)}>Accept</Button>
-                      <Button size="sm" variant="ghost" onClick={async () => {
-                        try {
-                          await api.request(`/api/social/friend-request/${r.id}/reject`, { method: 'POST' });
-                          fetchData();
-                        } catch { /* empty */ }
-                      }}>Ignore</Button>
+                      <Button size="sm" onClick={() => acceptRequest(r.id)} loading={acceptingId === r.id}>
+                        {acceptingId === r.id ? 'Accepting...' : 'Accept'}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => rejectRequest(r.id)}>
+                        Ignore
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -472,12 +490,24 @@ export default function SocialPage() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button size="sm" variant="secondary" onClick={() => sendFriendRequest(u.username)}>
-                  Add Friend
-                </Button>
-                <Button size="sm" onClick={() => setChallengeTarget(u.username)}>
-                  Challenge
-                </Button>
+                {friends.some((f: any) => f.username === u.username) ? (
+                  <Button size="sm" variant="secondary" disabled>
+                    Friends
+                  </Button>
+                ) : sentRequests.has(u.username) ? (
+                  <Button size="sm" variant="secondary" disabled className="opacity-60">
+                    Request Sent
+                  </Button>
+                ) : u.username === user?.username ? null : (
+                  <Button size="sm" variant="secondary" onClick={() => sendFriendRequest(u.username)}>
+                    Add Friend
+                  </Button>
+                )}
+                {u.username !== user?.username && (
+                  <Button size="sm" onClick={() => setChallengeTarget(u.username)}>
+                    Challenge
+                  </Button>
+                )}
               </div>
             </Card>
           ))}

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import prisma from '../../lib/prisma';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, optionalAuth } from '../middleware/auth';
 
 const router = Router();
 
@@ -164,7 +164,7 @@ router.get('/me/achievements', authMiddleware, async (req: Request, res: Respons
 });
 
 // GET /api/users/:username — public profile with stats
-router.get('/:username', async (req: Request, res: Response) => {
+router.get('/:username', optionalAuth, async (req: Request, res: Response) => {
   try {
     const username = req.params.username as string;
     const user = await prisma.user.findUnique({
@@ -199,10 +199,19 @@ router.get('/:username', async (req: Request, res: Response) => {
       return;
     }
 
+    let isFollowing = false;
+    if (req.user) {
+      const follow = await prisma.follow.findUnique({
+        where: { followerId_followingId: { followerId: req.user.userId, followingId: user.id } },
+      });
+      isFollowing = !!follow;
+    }
+
     res.json({
       ...user,
       followingCount: user._count.follows,
       followersCount: user._count.followers,
+      isFollowing,
       _count: undefined,
     });
   } catch (err) {

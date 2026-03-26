@@ -21,7 +21,7 @@ export default function RegisterPage() {
     setError('');
     try {
       await register(email, username, password);
-      router.push('/');
+      router.replace('/');
     } catch (err: any) {
       setError(err?.message || 'Registration failed. Try a different username or email.');
     }
