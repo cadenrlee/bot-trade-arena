@@ -39,27 +39,99 @@ export default function MatchSpectatorPage() {
   const [prediction, setPrediction] = useState<'bot1' | 'bot2' | null>(null);
   const tradeFeedRef = useRef<HTMLDivElement>(null);
 
-  // Fetch initial match data & connect websocket
+  const [matchOver, setMatchOver] = useState(false);
+
+  // Fetch match data + poll for updates (WebSocket is bonus, not required)
   useEffect(() => {
     let mounted = true;
+    let pollTimer: ReturnType<typeof setInterval> | undefined;
 
-    async function init() {
+    async function fetchMatch() {
       try {
         const data = await api.getMatch(matchId);
-        if (mounted) {
-          setActiveMatch(matchId, data);
-          setLoading(false);
+        if (!mounted) return;
+        setActiveMatch(matchId, data);
+        setLoading(false);
+
+        // If match is completed, show results
+        if (data.status === 'COMPLETED') {
+          setMatchOver(true);
+          // Build a fake tick from the completed match data
+          updateTick({
+            elapsed: data.duration || 300,
+            remaining: 0,
+            prices: {},
+            bot1: {
+              botId: data.bot1?.id || '',
+              pnl: data.bot1Pnl || 0,
+              totalCapital: 100000 + (data.bot1Pnl || 0),
+              trades: data.bot1Trades || 0,
+              wins: 0,
+              losses: 0,
+              winRate: data.bot1WinRate || 0,
+              openPositions: 0,
+            },
+            bot2: {
+              botId: data.bot2?.id || '',
+              pnl: data.bot2Pnl || 0,
+              totalCapital: 100000 + (data.bot2Pnl || 0),
+              trades: data.bot2Trades || 0,
+              wins: 0,
+              losses: 0,
+              winRate: data.bot2WinRate || 0,
+              openPositions: 0,
+            },
+          });
+          return;
         }
+
+        // Still running — keep polling
       } catch {
         if (mounted) setLoading(false);
       }
     }
 
-    init();
+    fetchMatch();
 
-    // WebSocket subscription
-    spectatorSocket.connect();
-    spectatorSocket.subscribeMatch(matchId);
+    // Poll every 2 seconds for live match data (REST fallback for when WS isn't available)
+    pollTimer = setInterval(() => {
+      if (!mounted || matchOver) return;
+      api.getMatch(matchId).then((data) => {
+        if (!mounted) return;
+        if (data.status === 'COMPLETED') {
+          setMatchOver(true);
+          updateTick({
+            elapsed: data.duration || 300,
+            remaining: 0,
+            prices: {},
+            bot1: {
+              botId: data.bot1?.id || '',
+              pnl: data.bot1Pnl || 0,
+              totalCapital: 100000 + (data.bot1Pnl || 0),
+              trades: data.bot1Trades || 0,
+              wins: 0, losses: 0,
+              winRate: data.bot1WinRate || 0,
+              openPositions: 0,
+            },
+            bot2: {
+              botId: data.bot2?.id || '',
+              pnl: data.bot2Pnl || 0,
+              totalCapital: 100000 + (data.bot2Pnl || 0),
+              trades: data.bot2Trades || 0,
+              wins: 0, losses: 0,
+              winRate: data.bot2WinRate || 0,
+              openPositions: 0,
+            },
+          });
+        }
+      }).catch(() => {});
+    }, 2000);
+
+    // Also try WebSocket for real-time updates (works locally, may not work on hosted)
+    try {
+      spectatorSocket.connect();
+      spectatorSocket.subscribeMatch(matchId);
+    } catch { /* WS optional */ }
 
     const offTick = spectatorSocket.on('match:tick', (data) => {
       if (mounted) updateTick(data);
@@ -73,12 +145,18 @@ export default function MatchSpectatorPage() {
       if (mounted) setSpectatorCount(data.count);
     });
 
+    const offEnd = spectatorSocket.on('match:end', () => {
+      if (mounted) setMatchOver(true);
+    });
+
     return () => {
       mounted = false;
+      if (pollTimer) clearInterval(pollTimer);
       spectatorSocket.unsubscribeMatch(matchId);
       offTick();
       offTrade();
       offSpectators();
+      offEnd();
       clearMatch();
     };
   }, [matchId]);
@@ -103,19 +181,25 @@ export default function MatchSpectatorPage() {
 
   if (!matchData) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--bg-primary)]">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[var(--bg-primary)] gap-4">
         <p className="text-[var(--text-secondary)]">Match not found.</p>
+        <Button variant="secondary" onClick={() => window.history.back()}>Go Back</Button>
       </div>
     );
   }
 
-  const bot1 = matchData.bot1;
-  const bot2 = matchData.bot2;
-  const bot1Pnl = currentTick?.bot1.pnl ?? 0;
-  const bot2Pnl = currentTick?.bot2.pnl ?? 0;
+  const bot1 = matchData.bot1 || { name: 'Bot 1', elo: 1000 };
+  const bot2 = matchData.bot2 || { name: 'Bot 2', elo: 1000 };
+  const bot1Pnl = currentTick?.bot1?.pnl ?? matchData.bot1Pnl ?? 0;
+  const bot2Pnl = currentTick?.bot2?.pnl ?? matchData.bot2Pnl ?? 0;
   const totalPnl = Math.abs(bot1Pnl) + Math.abs(bot2Pnl) || 1;
   const bot1BarPct = ((bot1Pnl + totalPnl) / (2 * totalPnl)) * 100;
   const remaining = currentTick?.remaining ?? matchData.duration ?? 0;
+  const isCompleted = matchOver || matchData.status === 'COMPLETED';
+  const isRunning = matchData.status === 'RUNNING' && !matchOver;
+  const winnerId = matchData.winnerId;
+  const bot1Score = matchData.bot1Score;
+  const bot2Score = matchData.bot2Score;
 
   return (
     <div className="min-h-screen bg-[var(--bg-primary)] px-4 py-6 sm:px-6 lg:px-8">
@@ -157,6 +241,52 @@ export default function MatchSpectatorPage() {
             <span>{formatPnl(bot2Pnl)}</span>
           </div>
         </motion.div>
+
+        {/* Match status */}
+        {isCompleted && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="text-center py-6"
+          >
+            <h2 className="text-3xl font-black font-[var(--font-display)]" style={{
+              background: 'linear-gradient(135deg, var(--accent-indigo), var(--accent-purple))',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}>
+              {winnerId === matchData.bot1Id ? `${bot1.name} WINS!` :
+               winnerId === matchData.bot2Id ? `${bot2.name} WINS!` :
+               'DRAW!'}
+            </h2>
+            <div className="flex justify-center gap-8 mt-4">
+              <div className="text-center">
+                <p className="text-xs text-[var(--text-tertiary)]">{bot1.name}</p>
+                <p className="text-2xl font-bold font-[var(--font-mono)] text-[var(--accent-indigo)]">{Math.round(bot1Score || 0)}</p>
+              </div>
+              <div className="text-sm text-[var(--text-tertiary)] self-center">vs</div>
+              <div className="text-center">
+                <p className="text-xs text-[var(--text-tertiary)]">{bot2.name}</p>
+                <p className="text-2xl font-bold font-[var(--font-mono)] text-[var(--accent-emerald)]">{Math.round(bot2Score || 0)}</p>
+              </div>
+            </div>
+            <div className="flex justify-center gap-3 mt-4">
+              <Button size="sm" onClick={() => window.location.href = '/matches/live'}>Play Again</Button>
+              <Button size="sm" variant="secondary" onClick={() => window.location.href = `/matches/${matchId}/results`}>Full Results</Button>
+            </div>
+          </motion.div>
+        )}
+
+        {isRunning && !currentTick && (
+          <div className="text-center py-8">
+            <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full bg-[var(--accent-indigo)]/10 border border-[var(--accent-indigo)]/20">
+              <svg className="animate-spin h-4 w-4 text-[var(--accent-indigo)]" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <span className="text-sm font-medium text-[var(--accent-indigo)]">Match in progress — waiting for data...</span>
+            </div>
+          </div>
+        )}
 
         {/* Bot cards row */}
         <div className="grid grid-cols-2 gap-4">

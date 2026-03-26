@@ -40,6 +40,7 @@ export default function BotsPage() {
   const [createLoading, setCreateLoading] = useState(false);
   const [formData, setFormData] = useState({ name: '', language: 'Python', description: '' });
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [createError, setCreateError] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
@@ -58,6 +59,7 @@ export default function BotsPage() {
   const handleCreate = async () => {
     if (!formData.name.trim()) return;
     setCreateLoading(true);
+    setCreateError('');
     try {
       const newBot = await api.createBot({
         name: formData.name,
@@ -68,7 +70,9 @@ export default function BotsPage() {
       setFormData({ name: '', language: 'Python', description: '' });
       setShowCreate(false);
       setCreateMode(null);
-    } catch { /* empty */ }
+    } catch (err: any) {
+      setCreateError(err?.message || 'Failed to create bot. Please try again.');
+    }
     setCreateLoading(false);
   };
 
@@ -200,13 +204,18 @@ export default function BotsPage() {
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
             />
           </div>
+          {createError && (
+            <div className="mt-3 p-3 rounded-xl bg-red-500/10 text-red-500 text-sm">
+              {createError}
+            </div>
+          )}
           <div className="mt-4 flex items-center gap-3">
             <Button onClick={handleCreate} loading={createLoading}>
               {createMode === 'existing' ? 'Register Bot' : 'Create Bot'}
             </Button>
             <button
               className="text-sm text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer"
-              onClick={() => setCreateMode(null)}
+              onClick={() => { setCreateMode(null); setCreateError(''); }}
             >
               Back
             </button>
