@@ -8,6 +8,11 @@ import { useAuthStore } from '@/stores/auth';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { formatPnl } from '@/lib/utils';
+import {
+  WEAPONS, ROBOT_SKINS, RARITY_COLORS,
+  getPlayerStats, updatePlayerStats, getUnlockedWeapons,
+  getEquippedWeapon, getEquippedSkin, type Weapon,
+} from '@/lib/weapons';
 
 // ============================================================
 // QUICK BATTLE — The Core Loop
@@ -44,17 +49,22 @@ export default function Home() {
   const [commentary, setCommentary] = useState('');
   const [streak, setStreak] = useState(0);
   const [matchesPlayed, setMatchesPlayed] = useState(0);
+  const [newUnlocks, setNewUnlocks] = useState<Weapon[]>([]);
+  const [equippedWeapon, setEquippedWeapon] = useState<Weapon>(WEAPONS[0]);
+  const [playerStats, setPlayerStats] = useState(getPlayerStats());
 
   const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const DURATION = 60;
 
-  // Load streak from localStorage
+  // Load stats from localStorage
   useEffect(() => {
-    const s = parseInt(localStorage.getItem('bta_streak') || '0');
-    const m = parseInt(localStorage.getItem('bta_matches') || '0');
-    setStreak(s);
-    setMatchesPlayed(m);
-  }, []);
+    const stats = getPlayerStats();
+    setPlayerStats(stats);
+    setStreak(stats.winStreak);
+    setMatchesPlayed(stats.totalMatches);
+    const wId = getEquippedWeapon();
+    setEquippedWeapon(WEAPONS.find(w => w.id === wId) || WEAPONS[0]);
+  }, [phase]);
 
   const startBattle = () => {
     setPhase('fighting');
@@ -88,11 +98,17 @@ export default function Home() {
         // Save streak
         const newMatches = matchesPlayed + 1;
         const won = myP > oppP;
-        const newStreak = won ? streak + 1 : 0;
-        setStreak(newStreak);
-        setMatchesPlayed(newMatches);
-        localStorage.setItem('bta_streak', String(newStreak));
-        localStorage.setItem('bta_matches', String(newMatches));
+        // Update stats and check for new unlocks
+        const beforeUnlocks = getUnlockedWeapons(getPlayerStats()).map(w => w.id);
+        const newStats = updatePlayerStats(won, myT);
+        const afterUnlocks = getUnlockedWeapons(newStats).map(w => w.id);
+        const justUnlocked = afterUnlocks.filter(id => !beforeUnlocks.includes(id));
+        if (justUnlocked.length > 0) {
+          setNewUnlocks(WEAPONS.filter(w => justUnlocked.includes(w.id)));
+        }
+        setStreak(newStats.winStreak);
+        setMatchesPlayed(newStats.totalMatches);
+        setPlayerStats(newStats);
         return;
       }
 
@@ -158,19 +174,33 @@ export default function Home() {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col">
 
           {/* Header */}
-          <div className="text-center mb-6">
+          <div className="text-center mb-5">
             <h1 className="text-3xl font-black font-[var(--font-display)]">
               <span style={{ background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                 Bot Trade Arena
               </span>
             </h1>
-            {streak > 0 && (
-              <p className="text-sm mt-1">
-                <span className="text-orange-400">🔥</span>
-                <span className="font-[var(--font-mono)] font-bold"> {streak} win streak</span>
-              </p>
-            )}
+            <div className="flex items-center justify-center gap-4 mt-2 text-sm">
+              {streak > 0 && (
+                <span><span className="text-orange-400">🔥</span> <span className="font-[var(--font-mono)] font-bold">{streak}</span> streak</span>
+              )}
+              <span className="text-[var(--text-tertiary)]">{playerStats.totalWins}W / {playerStats.totalMatches}M</span>
+            </div>
           </div>
+
+          {/* Equipped weapon */}
+          <Link href="/armory">
+            <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-default)] mb-4 cursor-pointer hover:border-[var(--border-hover)] transition-all">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{equippedWeapon.emoji}</span>
+                <div>
+                  <p className="text-sm font-bold">{equippedWeapon.name}</p>
+                  <p className="text-[10px]" style={{ color: RARITY_COLORS[equippedWeapon.rarity] }}>{equippedWeapon.rarity.toUpperCase()}</p>
+                </div>
+              </div>
+              <span className="text-xs text-[var(--text-tertiary)]">Armory →</span>
+            </div>
+          </Link>
 
           {/* Strategy picker */}
           <div className="mb-5">
@@ -381,10 +411,57 @@ export default function Home() {
             </div>
           </div>
 
+          {/* New weapon unlocks! */}
+          {newUnlocks.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.5, type: 'spring', stiffness: 200 }}
+              className="p-5 rounded-2xl text-center mb-4"
+              style={{
+                background: `linear-gradient(135deg, ${RARITY_COLORS[newUnlocks[0].rarity]}15, transparent)`,
+                border: `2px solid ${RARITY_COLORS[newUnlocks[0].rarity]}40`,
+                boxShadow: `0 0 30px ${RARITY_COLORS[newUnlocks[0].rarity]}20`,
+              }}
+            >
+              <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 0.6, repeat: 2 }}>
+                <p className="text-3xl mb-2">{newUnlocks[0].emoji}</p>
+              </motion.div>
+              <p className="text-xs uppercase tracking-wider font-bold mb-1" style={{ color: RARITY_COLORS[newUnlocks[0].rarity] }}>
+                {newUnlocks[0].rarity} WEAPON UNLOCKED!
+              </p>
+              <p className="text-lg font-black">{newUnlocks[0].name}</p>
+              <p className="text-xs text-[var(--text-secondary)] mt-1">{newUnlocks[0].description}</p>
+              <Link href="/armory">
+                <Button size="sm" className="mt-3">Equip Now</Button>
+              </Link>
+            </motion.div>
+          )}
+
+          {/* Next unlock progress */}
+          {newUnlocks.length === 0 && (() => {
+            const nextWeapon = WEAPONS.find(w => !w.unlockCheck(playerStats));
+            if (!nextWeapon) return null;
+            return (
+              <div className="p-3 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-default)] mb-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl opacity-40">{nextWeapon.emoji}</span>
+                  <div className="flex-1">
+                    <p className="text-xs text-[var(--text-tertiary)]">Next unlock: <span className="font-bold text-[var(--text-secondary)]">{nextWeapon.name}</span></p>
+                    <p className="text-[10px] text-[var(--text-tertiary)]">{nextWeapon.unlockRequirement}</p>
+                  </div>
+                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ color: RARITY_COLORS[nextWeapon.rarity], background: `${RARITY_COLORS[nextWeapon.rarity]}15` }}>
+                    {nextWeapon.rarity}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Actions */}
           <div className="w-full space-y-3">
             <motion.button
-              onClick={() => { setPhase('ready'); }}
+              onClick={() => { setPhase('ready'); setNewUnlocks([]); }}
               className="w-full py-4 rounded-2xl text-white text-lg font-black cursor-pointer"
               style={{ background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', boxShadow: '0 0 30px rgba(99,102,241,0.3)' }}
               whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
