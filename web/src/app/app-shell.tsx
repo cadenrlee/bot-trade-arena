@@ -18,7 +18,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isAuthPage = AUTH_PAGES.includes(pathname);
   // Use token (synchronous from localStorage) not user (async from API) to avoid flash
   const hasAuth = !!(user || token);
-  const isFullScreen = isAuthPage || (pathname === '/' && !hasAuth);
+  const isFullScreen = isAuthPage;
 
   useEffect(() => {
     loadFromStorage();
@@ -41,7 +41,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
         </div>
         <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-          <NavLink href="/" icon="⚔" label="Battle" />
+          <NavLink href="/" icon="🏠" label="Home" />
+          <NavLink href="/battle" icon="⚔" label="Battle" />
           <NavLink href="/armory" icon="🗡" label="Armory" />
           <NavLink href="/battlepass" icon="⭐" label="Battle Pass" />
           <NavLink href="/history" icon="📜" label="History" />
@@ -85,7 +86,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Mobile bottom nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[var(--bg-secondary)] border-t border-[var(--border-default)] z-40 flex">
-        <MobileTab href="/" icon="⚔" label="Battle" />
+        <MobileTab href="/" icon="🏠" label="Home" />
         <MobileTab href="/armory" icon="🗡" label="Armory" />
         <MobileTab href="/leaderboards" icon="🏆" label="Rank" />
         <MobileTab href="/feed" icon="📢" label="Feed" />
