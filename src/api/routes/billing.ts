@@ -11,9 +11,19 @@ const router = Router();
 // Stripe client
 // ---------------------------------------------------------------------------
 
-const stripe = new Stripe(config.stripe.secretKey, {
-  apiVersion: '2025-02-24.acacia',
-});
+// Lazy-init Stripe so missing keys don't crash the whole server
+let _stripe: Stripe | null = null;
+function getStripe(): Stripe {
+  if (!_stripe) {
+    if (!config.stripe.secretKey) {
+      throw new Error('Stripe is not configured. Set STRIPE_SECRET_KEY env var.');
+    }
+    _stripe = new Stripe(config.stripe.secretKey, {
+      apiVersion: '2025-02-24.acacia' as any,
+    });
+  }
+  return _stripe;
+}
 
 // ---------------------------------------------------------------------------
 // Plan definitions
@@ -90,7 +100,7 @@ async function getOrCreateStripeCustomer(userId: string): Promise<string> {
 
   if (user.stripeId) return user.stripeId;
 
-  const customer = await stripe.customers.create({
+  const customer = await getStripe().customers.create({
     email: user.email,
     metadata: { userId: user.id, username: user.username },
   });
@@ -134,7 +144,7 @@ router.get('/status', authMiddleware, async (req: Request, res: Response) => {
     // Fetch active subscription from Stripe if customer exists
     if (user.stripeId) {
       try {
-        const subscriptions = await stripe.subscriptions.list({
+        const subscriptions = await getStripe().subscriptions.list({
           customer: user.stripeId,
           status: 'active',
           limit: 1,
@@ -174,7 +184,7 @@ router.post('/subscribe', authMiddleware, async (req: Request, res: Response) =>
 
     const customerId = await getOrCreateStripeCustomer(req.user!.userId);
 
-    const session = await stripe.checkout.sessions.create({
+    const session = await getStripe().checkout.sessions.create({
       customer: customerId,
       mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
@@ -216,7 +226,7 @@ router.post('/cancel', authMiddleware, async (req: Request, res: Response) => {
     }
 
     // Find the active subscription
-    const subscriptions = await stripe.subscriptions.list({
+    const subscriptions = await getStripe().subscriptions.list({
       customer: user.stripeId,
       status: 'active',
       limit: 1,
@@ -228,7 +238,7 @@ router.post('/cancel', authMiddleware, async (req: Request, res: Response) => {
     }
 
     // Cancel at period end so the user keeps access until it expires
-    const cancelled = await stripe.subscriptions.update(subscriptions.data[0].id, {
+    const cancelled = await getStripe().subscriptions.update(subscriptions.data[0].id, {
       cancel_at_period_end: true,
     });
 
@@ -257,7 +267,7 @@ router.get('/invoices', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const invoices = await stripe.invoices.list({
+    const invoices = await getStripe().invoices.list({
       customer: user.stripeId,
       limit: 20,
     });
@@ -305,7 +315,7 @@ router.post('/season-pass', authMiddleware, async (req: Request, res: Response) 
 
     const customerId = await getOrCreateStripeCustomer(req.user!.userId);
 
-    const session = await stripe.checkout.sessions.create({
+    const session = await getStripe().checkout.sessions.create({
       customer: customerId,
       mode: 'payment',
       line_items: [
@@ -353,7 +363,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
   let event: Stripe.Event;
 
   try {
-    event = stripe.webhooks.constructEvent(req.body, sig, config.stripe.webhookSecret);
+    event = getStripe().webhooks.constructEvent(req.body, sig, config.stripe.webhookSecret);
   } catch (err: any) {
     console.error('Webhook signature verification failed:', err.message);
     res.status(400).json({ error: `Webhook Error: ${err.message}` });
@@ -394,7 +404,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
           // Get subscription to find current period end
           let planExpiresAt: Date | null = null;
           if (session.subscription) {
-            const sub = await stripe.subscriptions.retrieve(session.subscription as string);
+            const sub = await getStripe().subscriptions.retrieve(session.subscription as string);
             planExpiresAt = new Date(sub.current_period_end * 1000);
           }
 
@@ -430,7 +440,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
 
         // Update plan expiry from the subscription's current period end
         if (invoice.subscription) {
-          const sub = await stripe.subscriptions.retrieve(invoice.subscription as string);
+          const sub = await getStripe().subscriptions.retrieve(invoice.subscription as string);
           await prisma.user.update({
             where: { id: user.id },
             data: {
