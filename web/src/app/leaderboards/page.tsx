@@ -121,15 +121,16 @@ export default function LeaderboardsPage() {
 
       {/* Rankings Table */}
       <Card hover={false} className="overflow-hidden p-0">
+        <div className="overflow-x-auto">
         {/* Table Header */}
-        <div className="grid grid-cols-[60px_1fr_1fr_100px_100px_80px_80px] gap-2 px-5 py-3 text-xs uppercase tracking-wider text-[var(--text-tertiary)] border-b border-[var(--border-default)] bg-[var(--bg-secondary)]">
+        <div className="grid grid-cols-[40px_1fr_80px_70px] md:grid-cols-[60px_1fr_1fr_100px_100px_80px_80px] gap-2 px-3 md:px-5 py-3 text-xs uppercase tracking-wider text-[var(--text-tertiary)] border-b border-[var(--border-default)] bg-[var(--bg-secondary)] min-w-0">
           <span>Rank</span>
           <span>User</span>
-          <span>Bot</span>
-          <span>Tier</span>
+          <span className="hidden md:inline">Bot</span>
+          <span className="hidden md:inline">Tier</span>
           <span className="text-right">ELO</span>
           <span className="text-right">Win Rate</span>
-          <span className="text-right">Matches</span>
+          <span className="hidden md:inline text-right">Matches</span>
         </div>
 
         {loading ? (
@@ -145,7 +146,7 @@ export default function LeaderboardsPage() {
                 <div
                   key={entry.id || i}
                   className={cn(
-                    'grid grid-cols-[60px_1fr_1fr_100px_100px_80px_80px] gap-2 px-5 py-3 items-center transition-colors',
+                    'grid grid-cols-[40px_1fr_80px_70px] md:grid-cols-[60px_1fr_1fr_100px_100px_80px_80px] gap-2 px-3 md:px-5 py-3 items-center transition-colors min-w-0',
                     isSelf
                       ? 'bg-[rgba(99,102,241,0.08)] shadow-[inset_0_0_30px_rgba(99,102,241,0.06)]'
                       : 'hover:bg-[var(--bg-secondary)]'
@@ -164,10 +165,10 @@ export default function LeaderboardsPage() {
                     {entry.displayName || entry.username}
                     {isSelf && <span className="ml-2 text-xs text-[var(--accent-indigo)]">(you)</span>}
                   </a>
-                  <span className="text-sm text-[var(--text-secondary)] truncate">
+                  <span className="hidden md:inline text-sm text-[var(--text-secondary)] truncate">
                     {entry.botName || '---'}
                   </span>
-                  <span>
+                  <span className="hidden md:inline">
                     {entry.tier && <TierBadge tier={entry.tier} size="sm" />}
                   </span>
                   <span className="text-sm font-bold font-[var(--font-mono)] text-[var(--text-primary)] text-right">
@@ -176,7 +177,7 @@ export default function LeaderboardsPage() {
                   <span className="text-sm font-[var(--font-mono)] text-[var(--accent-emerald)] text-right">
                     {entry.winRate != null ? `${entry.winRate.toFixed(1)}%` : '---'}
                   </span>
-                  <span className="text-sm font-[var(--font-mono)] text-[var(--text-secondary)] text-right">
+                  <span className="hidden md:inline text-sm font-[var(--font-mono)] text-[var(--text-secondary)] text-right">
                     {entry.totalMatches ?? 0}
                   </span>
                 </div>
@@ -187,24 +188,25 @@ export default function LeaderboardsPage() {
 
         {/* Your position pinned at bottom */}
         {myPosition && !entries.some((e: any) => isCurrentUser(e)) && (
-          <div className="border-t-2 border-[var(--accent-indigo)] grid grid-cols-[60px_1fr_1fr_100px_100px_80px_80px] gap-2 px-5 py-3 items-center bg-[rgba(99,102,241,0.08)]">
+          <div className="border-t-2 border-[var(--accent-indigo)] grid grid-cols-[40px_1fr_80px_70px] md:grid-cols-[60px_1fr_1fr_100px_100px_80px_80px] gap-2 px-3 md:px-5 py-3 items-center bg-[rgba(99,102,241,0.08)] min-w-0">
             <span className="text-sm font-bold font-[var(--font-mono)] text-[var(--accent-indigo)]">
               #{myPosition.rank}
             </span>
             <span className="text-sm font-medium text-[var(--text-primary)]">
               {user?.displayName || user?.username} <span className="text-xs text-[var(--accent-indigo)]">(you)</span>
             </span>
-            <span className="text-sm text-[var(--text-secondary)]">{myPosition.botName || '---'}</span>
-            <span>{myPosition.tier && <TierBadge tier={myPosition.tier} size="sm" />}</span>
+            <span className="hidden md:inline text-sm text-[var(--text-secondary)]">{myPosition.botName || '---'}</span>
+            <span className="hidden md:inline">{myPosition.tier && <TierBadge tier={myPosition.tier} size="sm" />}</span>
             <span className="text-sm font-bold font-[var(--font-mono)] text-right">{myPosition.elo}</span>
             <span className="text-sm font-[var(--font-mono)] text-[var(--accent-emerald)] text-right">
               {myPosition.winRate?.toFixed(1)}%
             </span>
-            <span className="text-sm font-[var(--font-mono)] text-[var(--text-secondary)] text-right">
+            <span className="hidden md:inline text-sm font-[var(--font-mono)] text-[var(--text-secondary)] text-right">
               {myPosition.totalMatches ?? 0}
             </span>
           </div>
         )}
+        </div>
       </Card>
 
       {/* Pagination */}

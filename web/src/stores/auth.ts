@@ -86,6 +86,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   loadFromStorage: () => {
+    if (typeof window === 'undefined') return;
     const token = localStorage.getItem('bta_token');
     const refreshToken = localStorage.getItem('bta_refresh');
     if (token) {

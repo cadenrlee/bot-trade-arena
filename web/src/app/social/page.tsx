@@ -235,7 +235,7 @@ export default function SocialPage() {
                     <span className="font-bold text-[var(--accent-indigo)]">{replayBot}</span>
                     {' scored '}
                     <span className="font-bold font-[var(--font-mono)]">{Math.round(score)}</span>
-                    {' — now {replayTarget} needs to beat it!'}
+                    {` — now ${replayTarget} needs to beat it!`}
                   </p>
                 </div>
               );
@@ -344,7 +344,7 @@ export default function SocialPage() {
               {friends.map((f: any) => (
                 <Card key={f.id} className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[var(--accent-indigo)] to-[var(--accent-purple)] flex items-center justify-center text-white font-bold">
-                    {f.username[0].toUpperCase()}
+                    {(f.username || '?')[0].toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold truncate">{f.displayName || f.username}</p>

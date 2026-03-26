@@ -10,6 +10,7 @@ const FULL_SCREEN_PAGES = ['/', '/auth/login', '/auth/register', '/auth/forgot-p
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const loadFromStorage = useAuthStore((s) => s.loadFromStorage);
+  const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
   const pathname = usePathname();
   const isFullScreen = FULL_SCREEN_PAGES.includes(pathname);
@@ -47,10 +48,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="p-3 border-t border-[var(--border-default)]">
             <Link href={`/profile/${user.username}`} className="flex items-center gap-2 p-2 rounded-lg hover:bg-[var(--bg-tertiary)]">
               <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[var(--accent-indigo)] to-[var(--accent-purple)] flex items-center justify-center text-white text-xs font-bold">
-                {user.username[0].toUpperCase()}
+                {(user.username || '?')[0].toUpperCase()}
               </div>
               <span className="text-xs font-medium truncate">{user.username}</span>
             </Link>
+            <button
+              onClick={() => { logout(); window.location.href = '/'; }}
+              className="w-full mt-1 text-left px-2 py-1.5 rounded-lg text-xs text-[var(--text-tertiary)] hover:text-[var(--accent-red)] hover:bg-[var(--bg-tertiary)] transition-colors cursor-pointer"
+            >
+              Sign Out
+            </button>
           </div>
         ) : (
           <div className="p-3 border-t border-[var(--border-default)] space-y-1.5">
@@ -72,6 +79,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <MobileTab href="/leaderboards" icon="🏆" label="Rank" />
         <MobileTab href="/social" icon="👥" label="Friends" />
         <MobileTab href={user ? `/profile/${user.username}` : '/auth/login'} icon="👤" label={user ? 'Me' : 'Sign In'} />
+        {user && (
+          <button
+            onClick={() => { logout(); window.location.href = '/'; }}
+            className="flex-1 flex flex-col items-center gap-0.5 py-2 text-center transition-colors text-[var(--text-tertiary)] cursor-pointer"
+          >
+            <span className="text-lg">🚪</span>
+            <span className="text-[10px]">Sign Out</span>
+          </button>
+        )}
       </nav>
     </div>
   );

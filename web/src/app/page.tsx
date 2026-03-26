@@ -78,6 +78,12 @@ export default function Home() {
   const [bpLevelUp, setBpLevelUp] = useState<BattlePassTier | null>(null);
   const [bpState, setBpState] = useState(getBattlePassState());
 
+  // Interactive market events — the skill element
+  const [marketEvent, setMarketEvent] = useState<{ id: number; text: string; emoji: string; bonus: number; deadline: number } | null>(null);
+  const [eventsCaught, setEventsCaught] = useState(0);
+  const [eventsMissed, setEventsMissed] = useState(0);
+  const eventIdRef = useRef(0);
+
   const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const DURATION = 60;
 
@@ -109,6 +115,7 @@ export default function Home() {
     setMyTrades(0); setOppTrades(0);
     setMyWins(0); setOppWins(0);
     setCombo(0); setEloChange(0);
+    setMarketEvent(null); setEventsCaught(0); setEventsMissed(0);
     setCommentary(`Matched against ${opp.name} (${opp.elo} ELO)...`);
 
     const strat = STRATEGIES.find(s => s.id === strategy) || STRATEGIES[1];
@@ -214,11 +221,60 @@ export default function Home() {
         }
       }
 
+      // Market events — pop up for player to tap (the skill element!)
+      if (tick % 12 === 6 && !marketEvent) {
+        const events = [
+          { text: 'BTC Breakout!', emoji: '📈', bonus: 30 },
+          { text: 'Flash Crash!', emoji: '💥', bonus: 25 },
+          { text: 'Volume Spike!', emoji: '📊', bonus: 20 },
+          { text: 'Whale Alert!', emoji: '🐋', bonus: 35 },
+          { text: 'Bull Signal!', emoji: '🐂', bonus: 28 },
+          { text: 'Momentum Shift!', emoji: '🔄', bonus: 22 },
+          { text: 'Earnings Beat!', emoji: '💰', bonus: 32 },
+          { text: 'Short Squeeze!', emoji: '🚀', bonus: 40 },
+        ];
+        const ev = events[Math.floor(Math.random() * events.length)];
+        eventIdRef.current++;
+        setMarketEvent({ ...ev, id: eventIdRef.current, deadline: Date.now() + 2500 });
+        // Auto-expire if not tapped
+        const evId = eventIdRef.current;
+        setTimeout(() => {
+          setMarketEvent(prev => {
+            if (prev && prev.id === evId) {
+              // Missed! Opponent gets the bonus
+              oppP += ev.bonus * 0.7;
+              setOppPnl(oppP);
+              setEventsMissed(m => m + 1);
+              setCommentary(`${opp.name} capitalizes on ${ev.text}`);
+              return null;
+            }
+            return prev;
+          });
+        }, 2500);
+      }
+
       // Commentary
       if (tick % 8 === 0) {
         setCommentary(comments[Math.floor(Math.random() * comments.length)]);
       }
     }, 1000);
+  };
+
+  const handleTapEvent = () => {
+    if (!marketEvent) return;
+    // Player caught the event! Bonus trade
+    setMyPnl(prev => prev + marketEvent.bonus);
+    setMyWins(w => w + 1);
+    setMyTrades(t => t + 1);
+    setCombo(c => c + 1);
+    setEventsCaught(c => c + 1);
+    setB1Act('attack'); setB2Act('hit');
+    setDmg({ side: 'right', text: `+$${marketEvent.bonus}` });
+    setScreenFlash('rgba(34,197,94,0.2)');
+    setShake(true);
+    setCommentary(`You caught the ${marketEvent.text}!`);
+    setMarketEvent(null);
+    setTimeout(() => { setB1Act('idle'); setB2Act('idle'); setDmg(null); setShake(false); setScreenFlash(null); }, 500);
   };
 
   const myPnlPct = (myPnl / 100000) * 100;
@@ -447,6 +503,37 @@ export default function Home() {
             </div>
           </div>
 
+          {/* MARKET EVENT — tap to catch! */}
+          <AnimatePresence>
+            {marketEvent && (
+              <motion.button
+                key={marketEvent.id}
+                initial={{ opacity: 0, scale: 0.5, y: 20 }}
+                animate={{ opacity: 1, scale: [1, 1.05, 1], y: 0 }}
+                exit={{ opacity: 0, scale: 0.5, y: -20 }}
+                transition={{ duration: 0.3 }}
+                onClick={handleTapEvent}
+                className="w-full py-4 rounded-2xl text-center cursor-pointer mt-3 relative overflow-hidden"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(245,158,11,0.2), rgba(239,68,68,0.1))',
+                  border: '2px solid rgba(245,158,11,0.4)',
+                  boxShadow: '0 0 30px rgba(245,158,11,0.2)',
+                }}
+              >
+                {/* Shrinking deadline bar */}
+                <motion.div
+                  className="absolute bottom-0 left-0 h-1 bg-[#F59E0B]"
+                  initial={{ width: '100%' }}
+                  animate={{ width: '0%' }}
+                  transition={{ duration: 2.5, ease: 'linear' }}
+                />
+                <span className="text-2xl">{marketEvent.emoji}</span>
+                <p className="text-sm font-black text-[#F59E0B] mt-1">{marketEvent.text}</p>
+                <p className="text-[11px] text-[var(--text-secondary)]">TAP to trade! +${marketEvent.bonus}</p>
+              </motion.button>
+            )}
+          </AnimatePresence>
+
           {/* Commentary */}
           <AnimatePresence mode="wait">
             <motion.p key={commentary} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -481,10 +568,17 @@ export default function Home() {
             </span>
           </motion.div>
           <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
-            className="text-sm text-center mb-4 font-[var(--font-mono)]">
+            className="text-sm text-center mb-2 font-[var(--font-mono)]">
             Your ELO: <span className="font-bold">{myElo}</span>
             {iWon && streak > 1 && <span className="ml-3 text-orange-400">🔥 {streak} streak!</span>}
           </motion.p>
+          {eventsCaught + eventsMissed > 0 && (
+            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}
+              className="text-xs text-center mb-4 text-[var(--text-tertiary)]">
+              Market events: <span className="text-[var(--accent-emerald)] font-bold">{eventsCaught} caught</span>
+              {eventsMissed > 0 && <span className="text-[var(--accent-red)]"> / {eventsMissed} missed</span>}
+            </motion.p>
+          )}
 
           {/* Score comparison */}
           <div className="flex gap-8 mb-6">
