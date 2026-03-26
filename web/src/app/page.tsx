@@ -20,9 +20,23 @@ import {
 // ============================================================
 
 const STRATEGIES = [
-  { id: 'aggressive', label: 'Aggressive', icon: '⚡', desc: 'High risk, high reward' },
-  { id: 'balanced', label: 'Balanced', icon: '⚖️', desc: 'Steady and smart' },
-  { id: 'defensive', label: 'Defensive', icon: '🛡️', desc: 'Protect your gains' },
+  { id: 'aggressive', label: 'Aggressive', icon: '⚡', desc: 'High risk, high reward', winRate: 0.58, tradeMult: 1.4, pnlMult: 1.8 },
+  { id: 'balanced', label: 'Balanced', icon: '⚖️', desc: 'Steady and smart', winRate: 0.52, tradeMult: 1.0, pnlMult: 1.0 },
+  { id: 'defensive', label: 'Defensive', icon: '🛡️', desc: 'Protect your gains', winRate: 0.45, tradeMult: 0.7, pnlMult: 0.5 },
+];
+
+// Named AI opponents — makes it feel like you're fighting real players
+const AI_OPPONENTS = [
+  { name: 'NoviceBot', elo: 850, strategy: 'defensive', difficulty: 0.35 },
+  { name: 'TradeJunkie', elo: 950, strategy: 'aggressive', difficulty: 0.42 },
+  { name: 'AlgoKid', elo: 1020, strategy: 'balanced', difficulty: 0.48 },
+  { name: 'MomentumMax', elo: 1100, strategy: 'aggressive', difficulty: 0.50 },
+  { name: 'SteadyEddie', elo: 1200, strategy: 'defensive', difficulty: 0.52 },
+  { name: 'QuantWiz', elo: 1350, strategy: 'balanced', difficulty: 0.55 },
+  { name: 'SharpeStar', elo: 1500, strategy: 'aggressive', difficulty: 0.58 },
+  { name: 'DeepAlpha', elo: 1650, strategy: 'balanced', difficulty: 0.62 },
+  { name: 'NeuralEdge', elo: 1800, strategy: 'aggressive', difficulty: 0.66 },
+  { name: 'GodMode', elo: 2000, strategy: 'balanced', difficulty: 0.72 },
 ];
 
 export default function Home() {
@@ -52,6 +66,10 @@ export default function Home() {
   const [newUnlocks, setNewUnlocks] = useState<Weapon[]>([]);
   const [equippedWeapon, setEquippedWeapon] = useState<Weapon>(WEAPONS[0]);
   const [playerStats, setPlayerStats] = useState(getPlayerStats());
+  const [opponent, setOpponent] = useState(AI_OPPONENTS[2]);
+  const [myElo, setMyElo] = useState(1000);
+  const [eloChange, setEloChange] = useState(0);
+  const [screenFlash, setScreenFlash] = useState<string | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const DURATION = 60;
@@ -67,14 +85,22 @@ export default function Home() {
   }, [phase]);
 
   const startBattle = () => {
+    // Pick opponent near your ELO
+    const savedElo = parseInt(localStorage.getItem('bta_elo') || '1000');
+    setMyElo(savedElo);
+    const nearbyOpps = AI_OPPONENTS.filter(o => Math.abs(o.elo - savedElo) < 400);
+    const opp = nearbyOpps[Math.floor(Math.random() * nearbyOpps.length)] || AI_OPPONENTS[2];
+    setOpponent(opp);
+
     setPhase('fighting');
     setElapsed(0);
     setMyPnl(0); setOppPnl(0);
     setMyTrades(0); setOppTrades(0);
     setMyWins(0); setOppWins(0);
-    setCombo(0);
-    setCommentary('Battle begins!');
+    setCombo(0); setEloChange(0);
+    setCommentary(`Matched against ${opp.name} (${opp.elo} ELO)...`);
 
+    const strat = STRATEGIES.find(s => s.id === strategy) || STRATEGIES[1];
     const aggrFactor = aggression / 100;
     const riskFactor = riskTolerance / 100;
     const isAggressive = strategy === 'aggressive';
@@ -106,6 +132,13 @@ export default function Home() {
         if (justUnlocked.length > 0) {
           setNewUnlocks(WEAPONS.filter(w => justUnlocked.includes(w.id)));
         }
+        // ELO change
+        const eloDelta = won ? Math.round(15 + Math.random() * 15) : -Math.round(10 + Math.random() * 10);
+        const newElo = Math.max(100, savedElo + eloDelta);
+        setEloChange(eloDelta);
+        setMyElo(newElo);
+        localStorage.setItem('bta_elo', String(newElo));
+
         setStreak(newStats.winStreak);
         setMatchesPlayed(newStats.totalMatches);
         setPlayerStats(newStats);
@@ -114,13 +147,14 @@ export default function Home() {
 
       setElapsed(tick);
 
-      // My bot trades
-      const myTradeChance = 0.12 + aggrFactor * 0.15;
+      // My bot trades — sliders VISIBLY change behavior
+      const myTradeChance = (0.08 + aggrFactor * 0.18) * strat.tradeMult;
       if (Math.random() < myTradeChance) {
-        const skill = isAggressive ? 0.55 : isDefensive ? 0.48 : 0.52;
-        const magnitude = (10 + aggrFactor * 40) * (0.5 + Math.random());
-        const won = Math.random() < skill + (riskFactor * 0.05);
-        const pnl = won ? magnitude : -magnitude * (1 - riskFactor * 0.3);
+        const skill = strat.winRate + (riskFactor * 0.06) - 0.03;
+        const magnitude = (8 + aggrFactor * 35) * strat.pnlMult * (0.5 + Math.random());
+        const won = Math.random() < skill;
+        // High risk = bigger wins AND bigger losses. Low risk = smaller both.
+        const pnl = won ? magnitude : -magnitude * (1.2 - riskFactor * 0.5);
 
         myP += pnl;
         myT++;
@@ -129,19 +163,21 @@ export default function Home() {
 
         if (won) {
           setB1Act('attack'); setB2Act('hit');
-          setDmg({ side: 'right', text: `${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toFixed(0)}` });
-          if (pnl > 30) setShake(true);
+          setDmg({ side: 'right', text: `+$${Math.abs(pnl).toFixed(0)}` });
+          setScreenFlash('rgba(34,197,94,0.15)');
+          if (pnl > 25) setShake(true);
         } else {
           setB1Act('hit'); setB2Act('attack');
           setDmg({ side: 'left', text: `-$${Math.abs(pnl).toFixed(0)}` });
+          setScreenFlash('rgba(239,68,68,0.12)');
         }
-        setTimeout(() => { setB1Act('idle'); setB2Act('idle'); setDmg(null); setShake(false); }, 400);
+        setTimeout(() => { setB1Act('idle'); setB2Act('idle'); setDmg(null); setShake(false); setScreenFlash(null); }, 500);
       }
 
-      // Opponent trades
-      if (Math.random() < 0.14) {
-        const oppWon = Math.random() < 0.50;
-        const mag = 15 + Math.random() * 25;
+      // Opponent trades — difficulty scales with their ELO
+      if (Math.random() < 0.12) {
+        const oppWon = Math.random() < opp.difficulty;
+        const mag = 12 + Math.random() * 30;
         oppP += oppWon ? mag : -mag;
         oppT++;
         if (oppWon) oppW++;
@@ -295,8 +331,22 @@ export default function Home() {
 
       {/* ===== FIGHTING PHASE ===== */}
       {phase === 'fighting' && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`flex-1 flex flex-col ${shake ? 'animate-[shk_0.25s]' : ''}`}>
-          <style jsx>{`@keyframes shk { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }`}</style>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`flex-1 flex flex-col relative ${shake ? 'animate-[shk_0.25s]' : ''}`}>
+          <style jsx>{`@keyframes shk { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }`}</style>
+          {/* Screen flash on hit */}
+          <AnimatePresence>
+            {screenFlash && (
+              <motion.div
+                key="flash"
+                className="absolute inset-0 z-30 pointer-events-none rounded-2xl"
+                style={{ background: screenFlash }}
+                initial={{ opacity: 1 }}
+                animate={{ opacity: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.4 }}
+              />
+            )}
+          </AnimatePresence>
 
           {/* Timer */}
           <div className="flex items-center gap-3 mb-3">
@@ -354,7 +404,7 @@ export default function Home() {
                 >{dmg.text}</motion.div>
               )}</AnimatePresence>
               <RobotSVG action={b2Act} color="#10B981" side="right" />
-              <p className="text-sm font-bold mt-1">Opponent</p>
+              <p className="text-sm font-bold mt-1">{opponent.name}</p>
               <p className="text-xs font-[var(--font-mono)]" style={{ color: oppPnl >= 0 ? '#10B981' : '#EF4444' }}>{formatPnl(oppPnl)}</p>
               <p className="text-[10px] text-[var(--text-tertiary)]">{oppTrades}T / {oppWins}W</p>
             </div>
@@ -385,13 +435,19 @@ export default function Home() {
             {iWon ? 'VICTORY!' : myPnl === oppPnl ? 'DRAW' : 'DEFEAT'}
           </motion.h1>
 
-          {iWon && streak > 1 && (
-            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
-              className="text-sm mb-4">
-              <span className="text-orange-400">🔥</span>
-              <span className="font-bold font-[var(--font-mono)]"> {streak} win streak!</span>
-            </motion.p>
-          )}
+          {/* ELO change */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
+            className="flex items-center justify-center gap-3 mb-2">
+            <span className="text-sm text-[var(--text-tertiary)]">vs {opponent.name}</span>
+            <span className="font-[var(--font-mono)] font-bold text-lg" style={{ color: eloChange >= 0 ? '#10B981' : '#EF4444' }}>
+              {eloChange >= 0 ? '+' : ''}{eloChange} ELO
+            </span>
+          </motion.div>
+          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
+            className="text-sm text-center mb-4 font-[var(--font-mono)]">
+            Your ELO: <span className="font-bold">{myElo}</span>
+            {iWon && streak > 1 && <span className="ml-3 text-orange-400">🔥 {streak} streak!</span>}
+          </motion.p>
 
           {/* Score comparison */}
           <div className="flex gap-8 mb-6">
