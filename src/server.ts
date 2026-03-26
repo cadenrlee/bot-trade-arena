@@ -23,6 +23,8 @@ import templateRoutes from './api/routes/templates';
 import alpacaRoutes from './api/routes/alpaca';
 import socialRoutes from './api/routes/social';
 import quickmatchRoutes from './api/routes/quickmatch';
+import feedRoutes from './api/routes/feed';
+import performanceLeaderboardRoutes from './api/routes/performanceLeaderboard';
 
 // Service imports
 import { MarketDataService } from './services/marketData';
@@ -71,6 +73,8 @@ app.use('/api/templates', templateRoutes);
 app.use('/api/alpaca', alpacaRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/quickmatch', quickmatchRoutes);
+app.use('/api/feed', feedRoutes);
+app.use('/api/performance-leaderboard', cacheMiddleware(30000), performanceLeaderboardRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

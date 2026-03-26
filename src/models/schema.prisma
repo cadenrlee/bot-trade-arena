@@ -52,6 +52,9 @@ model User {
   seasonEntries SeasonEntry[]
   follows       Follow[]  @relation("Follower")
   followers     Follow[]  @relation("Following")
+  posts         Post[]    @relation("PostAuthor")
+  postLikes     PostLike[] @relation("PostLikeUser")
+  postComments  PostComment[] @relation("PostCommentAuthor")
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -655,4 +658,51 @@ model QuickMatchHistory {
   createdAt       DateTime @default(now())
 
   @@index([odUserId])
+}
+
+// ============================================================
+// SOCIAL FEED: POSTS, LIKES, COMMENTS
+// ============================================================
+
+model Post {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation("PostAuthor", fields: [userId], references: [id])
+
+  type        String    @default("TEXT") // TEXT, MILESTONE, STATS_SNAPSHOT, TRADE_HIGHLIGHT
+  content     String
+
+  // Optional attached stats snapshot (frozen at post time)
+  statsSnapshot String?  // JSON: { equity, totalPnl, winRate, profitFactor, topSymbols, equityCurve }
+
+  // Engagement
+  likeCount    Int       @default(0)
+  commentCount Int       @default(0)
+
+  likes       PostLike[]
+  comments    PostComment[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model PostLike {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("PostLikeUser", fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+}
+
+model PostComment {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("PostCommentAuthor", fields: [userId], references: [id])
+  content   String
+  createdAt DateTime @default(now())
 }

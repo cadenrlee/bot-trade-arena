@@ -141,6 +141,29 @@ class ApiClient {
   getPlans() { return this.request<any[]>('/api/billing/plans'); }
   subscribe(plan: string) { return this.request<any>('/api/billing/subscribe', { method: 'POST', body: JSON.stringify({ plan }) }); }
 
+  // Alpaca real trading stats
+  getAlpacaProfile(username: string) { return this.request<any>(`/api/alpaca/profile/${username}`); }
+  getAlpacaStats() { return this.request<any>('/api/alpaca/stats-by-keys'); }
+
+  // Performance leaderboard
+  getPerformanceLeaderboard(sort?: string) {
+    const q = sort ? `?sort=${sort}` : '';
+    return this.request<any>(`/api/performance-leaderboard${q}`);
+  }
+
+  // Feed
+  getFeed(page = 1) { return this.request<any>(`/api/feed?page=${page}`); }
+  getUserPosts(username: string) { return this.request<any[]>(`/api/feed/user/${username}`); }
+  createPost(data: { content: string; type?: string; attachStats?: boolean }) {
+    return this.request<any>('/api/feed', { method: 'POST', body: JSON.stringify(data) });
+  }
+  likePost(id: string) { return this.request<any>(`/api/feed/${id}/like`, { method: 'POST' }); }
+  commentOnPost(id: string, content: string) {
+    return this.request<any>(`/api/feed/${id}/comment`, { method: 'POST', body: JSON.stringify({ content }) });
+  }
+  getPostComments(id: string) { return this.request<any[]>(`/api/feed/${id}/comments`); }
+  deletePost(id: string) { return this.request<any>(`/api/feed/${id}`, { method: 'DELETE' }); }
+
   // Health
   getHealth() { return this.request<any>('/api/health'); }
 }

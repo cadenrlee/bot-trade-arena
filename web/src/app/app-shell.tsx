@@ -41,6 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <NavLink href="/battlepass" icon="⭐" label="Battle Pass" />
           <NavLink href="/history" icon="📜" label="History" />
           <NavLink href="/leaderboards" icon="🏆" label="Rankings" />
+          <NavLink href="/feed" icon="📢" label="Feed" />
           <NavLink href="/social" icon="👥" label="Friends" />
           {user && <NavLink href="/bots" icon="🤖" label="My Bots" />}
           {user && <NavLink href="/bots/connect" icon="⚡" label="Go Ranked" highlight />}
@@ -78,6 +79,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <MobileTab href="/" icon="⚔" label="Battle" />
         <MobileTab href="/armory" icon="🗡" label="Armory" />
         <MobileTab href="/leaderboards" icon="🏆" label="Rank" />
+        <MobileTab href="/feed" icon="📢" label="Feed" />
         <MobileTab href="/social" icon="👥" label="Friends" />
         <MobileTab href={user ? `/profile/${user.username}` : '/auth/login'} icon="👤" label={user ? 'Me' : 'Sign In'} />
         {user && (
