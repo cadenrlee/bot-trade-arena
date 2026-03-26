@@ -1,6 +1,7 @@
 import { MatchEngine, type MatchConfig, type BotConnection, type MarketTick } from '../engine/match';
 import { eloToTier } from '../engine/scoring';
 import { templateBotRunner } from './templateBots';
+import { MarketRecorder } from './marketRecorder';
 import { config } from '../lib/config';
 import prisma from '../lib/prisma';
 import crypto from 'crypto';
@@ -27,8 +28,24 @@ export class AsyncMatchService {
     const bot = await prisma.bot.findUnique({ where: { id: botId } });
     if (!bot) return { matchId: '', score: null, error: 'Bot not found' };
 
-    // Get or generate market data
-    const ticks = chunkTicks || this.generateTicks();
+    // Get or generate market data — prefer real recorded data
+    let ticks: MarketTick[];
+    if (chunkTicks) {
+      ticks = chunkTicks;
+    } else {
+      try {
+        const chunk = await MarketRecorder.getRandomChunk();
+        if (chunk && chunk.ticks && chunk.ticks.length > 30) {
+          ticks = chunk.ticks;
+          console.log(`[Async] Using real market data: ${chunk.ticks.length} ticks from ${chunk.startTime}`);
+        } else {
+          ticks = this.generateTicks();
+          console.log('[Async] No recorded data available, using synthetic');
+        }
+      } catch {
+        ticks = this.generateTicks();
+      }
+    }
     const symbols = [...new Set(ticks.map(t => t.symbol))];
     const duration = Math.min(Math.floor(ticks.length / Math.max(symbols.length, 1)), 300);
 
@@ -111,8 +128,20 @@ export class AsyncMatchService {
   async createChallenge(challengerBotId: string, challengerUserId: string, targetUserId: string): Promise<{
     challengeId: string; score: any; replay?: any[]; trades?: any[]; error?: string;
   }> {
-    // Generate market data for the challenge
-    const ticks = this.generateTicks();
+    // Prefer real recorded market data over synthetic
+    let ticks: MarketTick[];
+    try {
+      const chunk = await MarketRecorder.getRandomChunk();
+      if (chunk && chunk.ticks && chunk.ticks.length > 30) {
+        ticks = chunk.ticks;
+        console.log(`[Challenge] Using real market data: ${chunk.ticks.length} ticks from ${chunk.startTime}`);
+      } else {
+        ticks = this.generateTicks();
+        console.log('[Challenge] No recorded data available, using synthetic');
+      }
+    } catch {
+      ticks = this.generateTicks();
+    }
 
     // Play for the challenger
     const result = await this.playAsync(challengerBotId, ticks);

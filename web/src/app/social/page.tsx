@@ -1,7 +1,7 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
+import { useEffect, useState, useCallback, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth';
 import { Card, CardTitle } from '@/components/ui/card';
@@ -17,8 +17,17 @@ const DURATIONS = [
   { label: '10 min', value: 600, desc: 'Marathon' },
 ];
 
-export default function SocialPage() {
+export default function SocialPageWrapper() {
+  return (
+    <Suspense fallback={<div className="text-center py-20 text-[var(--text-tertiary)]">Loading...</div>}>
+      <SocialPage />
+    </Suspense>
+  );
+}
+
+function SocialPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const user = useAuthStore((s) => s.user);
   const [tab, setTab] = useState<'friends' | 'challenges' | 'search'>('friends');
   const [friends, setFriends] = useState<any[]>([]);
@@ -57,6 +66,14 @@ export default function SocialPage() {
   }, [user]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Auto-open challenge modal if ?challenge=USERNAME is in the URL
+  useEffect(() => {
+    const challengeUser = searchParams.get('challenge');
+    if (challengeUser) {
+      setChallengeTarget(challengeUser);
+    }
+  }, [searchParams]);
 
   const searchUsers = async () => {
     if (!searchQuery.trim()) return;
@@ -198,14 +215,49 @@ export default function SocialPage() {
             }} />
 
             {(() => {
-              const frame = replayData.replay[Math.min(replayIdx, replayData.replay.length - 1)];
+              const currentIdx = Math.min(replayIdx, replayData.replay.length - 1);
+              const frame = replayData.replay[currentIdx];
+              const prevFrame = currentIdx > 0 ? replayData.replay[currentIdx - 1] : null;
               const done = replayIdx >= replayData.replay.length;
               const pnl = frame?.bot1Pnl || 0;
               const pnlPct = (pnl / 100000) * 100;
               const trades = frame?.bot1Trades || 0;
+              const prevTrades = prevFrame?.bot1Trades || 0;
+              const justTraded = trades > prevTrades;
               const score = replayData.score?.compositeScore || 0;
               const duration = replayData.replay.length;
               const progress = Math.min(100, (replayIdx / duration) * 100);
+
+              // Build P&L history for mini equity curve
+              const pnlHistory = replayData.replay.slice(0, currentIdx + 1).map((f: any) => f.bot1Pnl || 0);
+
+              // Market commentary based on progress
+              const commentary = done
+                ? 'Challenge sent! Waiting for response...'
+                : progress < 10
+                  ? 'Your bot is analyzing the market...'
+                  : progress < 25
+                    ? 'Scanning for entry signals...'
+                    : progress < 50
+                      ? justTraded ? 'Trade executed!' : 'Monitoring positions...'
+                      : progress < 75
+                        ? pnl > 0 ? 'Looking strong! Managing risk...' : 'Recalibrating strategy...'
+                        : progress < 95
+                          ? 'Final stretch — locking in gains...'
+                          : 'Closing out positions...';
+
+              // SVG equity curve
+              const chartW = 400;
+              const chartH = 60;
+              const minPnl = Math.min(0, ...pnlHistory);
+              const maxPnl = Math.max(1, ...pnlHistory);
+              const pnlRange = maxPnl - minPnl || 1;
+              const chartPoints = pnlHistory.map((v: number, i: number) => {
+                const x = pnlHistory.length > 1 ? (i / (pnlHistory.length - 1)) * chartW : 0;
+                const y = chartH - ((v - minPnl) / pnlRange) * (chartH - 6) - 3;
+                return `${x},${y}`;
+              }).join(' ');
+              const curveColor = pnl >= 0 ? '#10B981' : '#EF4444';
 
               return (
                 <div className="relative space-y-4">
@@ -216,13 +268,87 @@ export default function SocialPage() {
                         Challenge vs {replayTarget}
                       </h3>
                       <p className="text-xs text-[var(--text-tertiary)]">
-                        {done ? 'Challenge sent! Waiting for response...' : 'Your bot is trading...'}
+                        {commentary}
                       </p>
                     </div>
                     {done && (
                       <Button size="sm" variant="secondary" onClick={() => setReplayData(null)}>Close</Button>
                     )}
                   </div>
+
+                  {/* Market symbol badge */}
+                  <div className="flex items-center gap-3">
+                    <span className="px-3 py-1 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-default)] text-xs font-bold font-[var(--font-mono)] text-[var(--accent-amber)]">
+                      BTC/USD
+                    </span>
+                    <span className="px-3 py-1 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-default)] text-xs font-bold font-[var(--font-mono)] text-[var(--accent-indigo)]">
+                      ETH/USD
+                    </span>
+                    <span className="px-3 py-1 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-default)] text-xs font-bold font-[var(--font-mono)] text-[var(--accent-purple)]">
+                      SOL/USD
+                    </span>
+                    {!done && (
+                      <span className="ml-auto text-xs text-[var(--text-tertiary)] font-[var(--font-mono)]">
+                        {Math.floor(progress)}% complete
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Mini equity curve SVG */}
+                  <div className="relative rounded-xl bg-[var(--bg-primary)] border border-[var(--border-default)] p-3 overflow-hidden">
+                    <p className="text-[10px] text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Equity Curve</p>
+                    <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full h-16" preserveAspectRatio="none">
+                      <defs>
+                        <linearGradient id="replay-eq-fill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={curveColor} stopOpacity="0.25" />
+                          <stop offset="100%" stopColor={curveColor} stopOpacity="0" />
+                        </linearGradient>
+                      </defs>
+                      {pnlHistory.length > 1 && (
+                        <>
+                          <polygon
+                            points={`0,${chartH} ${chartPoints} ${(pnlHistory.length > 1 ? ((pnlHistory.length - 1) / (pnlHistory.length - 1)) * chartW : 0)},${chartH}`}
+                            fill="url(#replay-eq-fill)"
+                          />
+                          <polyline
+                            points={chartPoints}
+                            fill="none"
+                            stroke={curveColor}
+                            strokeWidth="2"
+                            strokeLinejoin="round"
+                          />
+                        </>
+                      )}
+                      {/* Zero line */}
+                      <line
+                        x1="0"
+                        y1={chartH - ((0 - minPnl) / pnlRange) * (chartH - 6) - 3}
+                        x2={chartW}
+                        y2={chartH - ((0 - minPnl) / pnlRange) * (chartH - 6) - 3}
+                        stroke="var(--text-tertiary)"
+                        strokeWidth="0.5"
+                        strokeDasharray="4,4"
+                        opacity="0.3"
+                      />
+                    </svg>
+                  </div>
+
+                  {/* Trade flash effect */}
+                  <AnimatePresence>
+                    {justTraded && !done && (
+                      <motion.div
+                        initial={{ opacity: 1, y: 0 }}
+                        animate={{ opacity: 0, y: -20 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.8 }}
+                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10"
+                      >
+                        <span className="text-lg font-black font-[var(--font-mono)] text-[var(--accent-amber)] drop-shadow-lg">
+                          TRADE #{trades}
+                        </span>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
                   {/* Progress bar */}
                   <div className="h-2 rounded-full bg-[var(--bg-primary)] overflow-hidden">
@@ -237,9 +363,11 @@ export default function SocialPage() {
                         {pnl >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
                       </p>
                     </div>
-                    <div>
+                    <div className="relative">
                       <p className="text-xs text-[var(--text-tertiary)]">Trades</p>
-                      <p className="text-2xl font-black font-[var(--font-mono)]">{trades}</p>
+                      <p className={cn('text-2xl font-black font-[var(--font-mono)] transition-all', justTraded && 'scale-110 text-[var(--accent-amber)]')}>
+                        {trades}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-[var(--text-tertiary)]">{done ? 'Final Score' : 'Score'}</p>
@@ -249,13 +377,48 @@ export default function SocialPage() {
                     </div>
                   </div>
 
-                  {/* Bot name */}
-                  <p className="text-center text-sm">
-                    <span className="font-bold text-[var(--accent-indigo)]">{replayBot}</span>
-                    {' scored '}
-                    <span className="font-bold font-[var(--font-mono)]">{Math.round(score)}</span>
-                    {` — now ${replayTarget} needs to beat it!`}
-                  </p>
+                  {/* Final result card with animated score reveal */}
+                  {done && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+                      className="rounded-xl border-2 border-[var(--accent-indigo)] bg-[var(--accent-indigo)]/5 p-5 text-center"
+                    >
+                      <p className="text-xs text-[var(--text-tertiary)] uppercase tracking-wider mb-2">Final Score</p>
+                      <motion.p
+                        initial={{ scale: 0.5, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ delay: 0.3, type: 'spring', stiffness: 300 }}
+                        className="text-5xl font-black font-[var(--font-mono)] text-[var(--accent-indigo)]"
+                      >
+                        {Math.round(score)}
+                      </motion.p>
+                      <p className="text-sm mt-2">
+                        <span className="font-bold text-[var(--accent-indigo)]">{replayBot}</span>
+                        {' finished with '}
+                        <span className={cn('font-bold font-[var(--font-mono)]', pnl >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]')}>
+                          {pnl >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
+                        </span>
+                        {' P&L across '}
+                        <span className="font-bold font-[var(--font-mono)]">{trades}</span>
+                        {' trades'}
+                      </p>
+                      <p className="text-xs text-[var(--text-tertiary)] mt-1">
+                        Now {replayTarget} needs to beat it!
+                      </p>
+                    </motion.div>
+                  )}
+
+                  {/* Non-done bot name line */}
+                  {!done && (
+                    <p className="text-center text-sm text-[var(--text-secondary)]">
+                      <span className="font-bold text-[var(--accent-indigo)]">{replayBot}</span>
+                      {' is competing against '}
+                      <span className="font-bold">{replayTarget}</span>
+                      {'\'s best...'}
+                    </p>
+                  )}
                 </div>
               );
             })()}

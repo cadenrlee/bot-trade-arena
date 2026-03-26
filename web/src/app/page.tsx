@@ -132,7 +132,7 @@ export default function Home() {
 
       {/* ===== QUICK ACTIONS ===== */}
       <div className="grid grid-cols-3 gap-3">
-        <Link href="/social" className="group">
+        <Link href="/social?tab=search" className="group">
           <div className="p-4 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-default)] text-center transition-all group-hover:border-[var(--border-hover)] group-hover:bg-[var(--bg-tertiary)]">
             <div className="text-2xl mb-1.5">&#x1F91D;</div>
             <div className="text-xs font-bold text-[var(--text-primary)]">Challenge</div>

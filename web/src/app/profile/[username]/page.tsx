@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth';
 import { Card, CardTitle } from '@/components/ui/card';
@@ -170,6 +170,7 @@ function PostCard({ post, currentUserId, onLike, onDelete }: any) {
 
 export default function ProfilePage() {
   const params = useParams();
+  const router = useRouter();
   const username = params.username as string;
   const currentUser = useAuthStore((s) => s.user);
 
@@ -348,9 +349,14 @@ export default function ProfilePage() {
             </div>
           </div>
           {!isOwnProfile && currentUser && (
-            <Button variant={following ? 'secondary' : 'primary'} size="sm" onClick={handleFollow} loading={followLoading}>
-              {following ? 'Unfollow' : 'Follow'}
-            </Button>
+            <div className="flex gap-2">
+              <Button variant={following ? 'secondary' : 'primary'} size="sm" onClick={handleFollow} loading={followLoading}>
+                {following ? 'Unfollow' : 'Follow'}
+              </Button>
+              <Button size="sm" onClick={() => router.push(`/social?challenge=${username}`)}>
+                Challenge
+              </Button>
+            </div>
           )}
         </div>
       </Card>
