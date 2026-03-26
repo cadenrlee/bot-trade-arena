@@ -6,6 +6,7 @@ import { z } from 'zod';
 import prisma from '../../lib/prisma';
 import { config } from '../../lib/config';
 import { authMiddleware, type AuthPayload } from '../middleware/auth';
+import { sendPasswordResetEmail } from '../../services/email';
 
 const router = Router();
 
@@ -187,11 +188,13 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
       expiresAt: Date.now() + 3600000, // 1 hour
     });
 
-    // In production, send email here. For now, return the token directly (dev mode).
-    if (config.nodeEnv === 'development') {
-      res.json({ message: 'Reset token generated', token, resetUrl: `/auth/reset-password?token=${token}` });
+    // Send the reset email
+    const emailSent = await sendPasswordResetEmail(user.email, token);
+
+    if (config.nodeEnv === 'development' && !process.env.RESEND_API_KEY) {
+      // Dev mode without email service — return token directly
+      res.json({ message: 'Reset link generated (dev mode)', token, resetUrl: `/auth/reset-password?token=${token}` });
     } else {
-      // In production: send email with reset link
       res.json({ message: 'If that email exists, a reset link has been sent.' });
     }
   } catch (err) {
