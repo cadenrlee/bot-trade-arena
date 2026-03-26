@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://bot-trade-arena-production.up.railway.app';
 
 interface FetchOptions extends RequestInit {
   token?: string;

@@ -1,4 +1,4 @@
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080/ws';
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'wss://bot-trade-arena-production.up.railway.app/ws';
 
 type MessageHandler = (data: any) => void;
 
