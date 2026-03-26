@@ -45,7 +45,10 @@ router.post('/challenge', authMiddleware, async (req: Request, res: Response) =>
     res.json({
       challengeId: result.challengeId,
       yourScore: result.score?.compositeScore,
-      message: `Challenge sent to ${targetUsername}! Your score: ${result.score?.compositeScore}`,
+      replay: result.replay,
+      trades: result.trades,
+      score: result.score,
+      message: `Challenge sent to ${targetUsername}!`,
     });
   } catch (err) {
     console.error('Challenge error:', err);

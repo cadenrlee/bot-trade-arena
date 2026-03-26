@@ -22,7 +22,7 @@ import crypto from 'crypto';
 export class AsyncMatchService {
 
   async playAsync(botId: string, chunkTicks?: MarketTick[]): Promise<{
-    matchId: string; score: any; error?: string;
+    matchId: string; score: any; replay?: any[]; trades?: any[]; error?: string;
   }> {
     const bot = await prisma.bot.findUnique({ where: { id: botId } });
     if (!bot) return { matchId: '', score: null, error: 'Bot not found' };
@@ -62,22 +62,24 @@ export class AsyncMatchService {
     // For non-template bots, use auto-strategy based on ELO
     const autoStrategy = !isTemplate ? this.createAutoStrategy(bot.elo) : null;
 
-    // Register match:end BEFORE ticks
+    // Record replay timeline
+    const replay: any[] = [];
+    const tradeLog: any[] = [];
+
     let matchResult: any = null;
     engine.on('match:end', (result) => { matchResult = result; });
+    engine.on('trade', (trade) => { tradeLog.push({ ...trade, second: engine.getElapsed() }); });
     engine.startManual();
 
-    // Feed ticks
+    // Feed ticks and record state every second
     let tickIdx = 0;
     const ticksPerSecond = Math.max(1, Math.floor(ticks.length / duration));
 
     for (let sec = 0; sec < duration; sec++) {
-      // Feed this second's ticks
       for (let t = 0; t < ticksPerSecond && tickIdx < ticks.length; t++, tickIdx++) {
         const tick = ticks[tickIdx];
         engine.updatePrice(tick);
 
-        // Drive strategy
         if (isTemplate && templateId) {
           templateBotRunner.onTick(engine, bot.id, templateId, templateParams, tick);
         } else if (autoStrategy) {
@@ -85,19 +87,29 @@ export class AsyncMatchService {
         }
       }
       engine.manualTick();
+
+      // Snapshot state for replay
+      const live = engine.getLiveState();
+      replay.push({
+        second: sec + 1,
+        bot1Pnl: live.bot1.pnl,
+        bot2Pnl: live.bot2.pnl,
+        bot1Trades: live.bot1.trades,
+        bot2Trades: live.bot2.trades,
+        bot1Wins: live.bot1.wins,
+        bot2Wins: live.bot2.losses, // phantom doesn't trade
+      });
     }
 
-    // Ensure match ends
     while (engine.getStatus() === 'running') engine.manualTick();
-
     if (isTemplate) templateBotRunner.cleanup(bot.id);
 
-    if (!matchResult) return { matchId, score: null, error: 'Match produced no results' };
-    return { matchId, score: matchResult.bot1.score };
+    if (!matchResult) return { matchId, score: null, replay: [], trades: [], error: 'Match produced no results' };
+    return { matchId, score: matchResult.bot1.score, replay, trades: tradeLog };
   }
 
   async createChallenge(challengerBotId: string, challengerUserId: string, targetUserId: string): Promise<{
-    challengeId: string; score: any; error?: string;
+    challengeId: string; score: any; replay?: any[]; trades?: any[]; error?: string;
   }> {
     // Generate market data for the challenge
     const ticks = this.generateTicks();
@@ -132,7 +144,7 @@ export class AsyncMatchService {
       },
     });
 
-    return { challengeId: challenge.id, score: result.score };
+    return { challengeId: challenge.id, score: result.score, replay: result.replay, trades: result.trades };
   }
 
   async acceptChallenge(challengeId: string, defenderBotId: string, defenderUserId: string): Promise<{

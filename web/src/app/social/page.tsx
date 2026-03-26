@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { motion } from 'framer-motion';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth';
 import { Card, CardTitle } from '@/components/ui/card';
@@ -84,22 +85,46 @@ export default function SocialPage() {
     } catch { /* empty */ }
   };
 
+  // Challenge replay state
+  const [replayData, setReplayData] = useState<any>(null);
+  const [replayIdx, setReplayIdx] = useState(0);
+  const [replayBot, setReplayBot] = useState('');
+  const [replayTarget, setReplayTarget] = useState('');
+
   const sendChallenge = async (targetUsername: string) => {
     if (!selectedBot) { setMessage('Select a bot first'); return; }
     setSending(true);
+    setMessage('');
     try {
       const result = await api.request<any>('/api/social/challenge', {
         method: 'POST',
         body: JSON.stringify({ botId: selectedBot, targetUsername, duration: selectedDuration }),
       });
-      setMessage(`Challenge sent! Your score: ${result.yourScore}`);
       setChallengeTarget(null);
+
+      if (result.replay && result.replay.length > 0) {
+        // Show the battle replay!
+        const myBot = bots.find((b: any) => b.id === selectedBot);
+        setReplayBot(myBot?.name || 'Your Bot');
+        setReplayTarget(targetUsername);
+        setReplayData(result);
+        setReplayIdx(0);
+      } else {
+        setMessage(`Challenge sent! Your score: ${result.yourScore}`);
+      }
       fetchData();
     } catch (err: any) {
       setMessage(err.message || 'Failed to send challenge');
     }
     setSending(false);
   };
+
+  // Animate replay
+  useEffect(() => {
+    if (!replayData?.replay || replayIdx >= replayData.replay.length) return;
+    const timer = setTimeout(() => setReplayIdx(i => i + 1), 100); // 10x speed
+    return () => clearTimeout(timer);
+  }, [replayIdx, replayData]);
 
   const acceptChallenge = async (challengeId: string) => {
     if (!selectedBot) { setMessage('Select a bot first'); return; }
@@ -143,6 +168,80 @@ export default function SocialPage() {
         <div className="p-3 rounded-xl bg-[var(--accent-indigo)]/10 text-[var(--accent-indigo)] text-sm">
           {message}
         </div>
+      )}
+
+      {/* ===== CHALLENGE REPLAY BATTLE ===== */}
+      {replayData && (
+        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+          <Card hover={false} className="p-6 relative overflow-hidden">
+            <div className="absolute inset-0 opacity-[0.04]" style={{
+              background: 'radial-gradient(ellipse at 25% 50%, var(--accent-indigo), transparent 50%), radial-gradient(ellipse at 75% 50%, var(--accent-emerald), transparent 50%)',
+            }} />
+
+            {(() => {
+              const frame = replayData.replay[Math.min(replayIdx, replayData.replay.length - 1)];
+              const done = replayIdx >= replayData.replay.length;
+              const pnl = frame?.bot1Pnl || 0;
+              const pnlPct = (pnl / 100000) * 100;
+              const trades = frame?.bot1Trades || 0;
+              const score = replayData.score?.compositeScore || 0;
+              const duration = replayData.replay.length;
+              const progress = Math.min(100, (replayIdx / duration) * 100);
+
+              return (
+                <div className="relative space-y-4">
+                  {/* Header */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-bold font-[var(--font-display)]">
+                        Challenge vs {replayTarget}
+                      </h3>
+                      <p className="text-xs text-[var(--text-tertiary)]">
+                        {done ? 'Challenge sent! Waiting for response...' : 'Your bot is trading...'}
+                      </p>
+                    </div>
+                    {done && (
+                      <Button size="sm" variant="secondary" onClick={() => setReplayData(null)}>Close</Button>
+                    )}
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="h-2 rounded-full bg-[var(--bg-primary)] overflow-hidden">
+                    <motion.div className="h-full rounded-full bg-gradient-to-r from-[var(--accent-indigo)] to-[var(--accent-purple)]" style={{ width: `${progress}%` }} />
+                  </div>
+
+                  {/* Stats */}
+                  <div className="grid grid-cols-3 gap-4 text-center">
+                    <div>
+                      <p className="text-xs text-[var(--text-tertiary)]">P&L</p>
+                      <p className="text-2xl font-black font-[var(--font-mono)]" style={{ color: pnl >= 0 ? '#10B981' : '#EF4444' }}>
+                        {pnl >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-[var(--text-tertiary)]">Trades</p>
+                      <p className="text-2xl font-black font-[var(--font-mono)]">{trades}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-[var(--text-tertiary)]">{done ? 'Final Score' : 'Score'}</p>
+                      <p className="text-2xl font-black font-[var(--font-mono)] text-[var(--accent-indigo)]">
+                        {done ? Math.round(score) : '...'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Bot name */}
+                  <p className="text-center text-sm">
+                    <span className="font-bold text-[var(--accent-indigo)]">{replayBot}</span>
+                    {' scored '}
+                    <span className="font-bold font-[var(--font-mono)]">{Math.round(score)}</span>
+                    {' — now {replayTarget} needs to beat it!'}
+                  </p>
+                </div>
+              );
+            })()}
+          </Card>
+        </motion.div>
       )}
 
       {/* Tabs */}
