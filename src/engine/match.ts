@@ -503,6 +503,23 @@ export class MatchEngine extends EventEmitter {
   getElapsed() { return this.elapsed; }
   getConfig() { return this.config; }
 
+  /** Get full live state for REST polling */
+  getLiveState() {
+    return {
+      status: this.status,
+      elapsed: this.elapsed,
+      remaining: this.config.duration - this.elapsed,
+      duration: this.config.duration,
+      prices: Object.fromEntries(this.marketPrices),
+      bot1: this.getPublicState(this.state1),
+      bot2: this.getPublicState(this.state2),
+      recentTrades: [
+        ...this.state1.trades.slice(-5).map(t => ({ ...t, botId: this.bot1.botId })),
+        ...this.state2.trades.slice(-5).map(t => ({ ...t, botId: this.bot2.botId })),
+      ].sort((a, b) => b.holdTime - a.holdTime),
+    };
+  }
+
   /** Manually advance the match by one tick (for testing without real-time intervals) */
   manualTick(): void {
     if (this.status === 'running') {

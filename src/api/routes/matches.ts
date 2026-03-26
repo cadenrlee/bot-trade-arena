@@ -124,6 +124,45 @@ router.get('/house-bots', (_req: Request, res: Response) => {
   res.json(houseBotService.getAvailableBots());
 });
 
+// GET /api/matches/:matchId/live — real-time match state for polling
+router.get('/:matchId/live', async (req: Request, res: Response) => {
+  try {
+    const matchId = req.params.matchId as string;
+    const orchestrator = req.app.locals.orchestrator;
+    if (!orchestrator) {
+      res.status(500).json({ error: 'Match system not ready' });
+      return;
+    }
+
+    const engine = orchestrator.getActiveMatch(matchId);
+    if (engine) {
+      // Match is running — return real live state from engine
+      res.json({ live: true, ...engine.getLiveState() });
+    } else {
+      // Match not active — return DB state
+      const match = await prisma.match.findUnique({ where: { id: matchId } });
+      if (!match) { res.status(404).json({ error: 'Match not found' }); return; }
+      res.json({
+        status: match.status,
+        elapsed: match.duration || 0,
+        remaining: 0,
+        duration: match.duration,
+        live: false,
+        bot1Pnl: match.bot1Pnl,
+        bot2Pnl: match.bot2Pnl,
+        bot1Score: match.bot1Score,
+        bot2Score: match.bot2Score,
+        bot1Trades: match.bot1Trades,
+        bot2Trades: match.bot2Trades,
+        winnerId: match.winnerId,
+      });
+    }
+  } catch (err) {
+    console.error('Live match error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/matches/:matchId
 router.get('/:matchId', async (req: Request, res: Response) => {
   try {
