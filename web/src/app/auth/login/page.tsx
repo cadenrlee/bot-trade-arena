@@ -44,6 +44,7 @@ export default function LoginPage() {
             value={loginField}
             onChange={(e) => setLoginField(e.target.value)}
             required
+            disabled={isLoading}
           />
 
           <Input
@@ -53,6 +54,7 @@ export default function LoginPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            disabled={isLoading}
           />
 
           {error && (

@@ -11,7 +11,7 @@ import { formatPnl } from '@/lib/utils';
 import {
   WEAPONS, ROBOT_SKINS, RARITY_COLORS,
   getPlayerStats, updatePlayerStats, getUnlockedWeapons,
-  getEquippedWeapon, getEquippedSkin, type Weapon,
+  getEquippedWeapon, getEquippedSkin, type Weapon, type RobotSkin,
 } from '@/lib/weapons';
 import {
   getBattlePassState, addBattlePassXP, claimDailyBonus, getXPForCurrentLevel,
@@ -69,6 +69,7 @@ export default function Home() {
   const [matchesPlayed, setMatchesPlayed] = useState(0);
   const [newUnlocks, setNewUnlocks] = useState<Weapon[]>([]);
   const [equippedWeapon, setEquippedWeapon] = useState<Weapon>(WEAPONS[0]);
+  const [equippedSkin, setEquippedSkin] = useState<RobotSkin>(ROBOT_SKINS[0]);
   const [playerStats, setPlayerStats] = useState(getPlayerStats());
   const [opponent, setOpponent] = useState(AI_OPPONENTS[2]);
   const [myElo, setMyElo] = useState(1000);
@@ -85,7 +86,17 @@ export default function Home() {
   const eventIdRef = useRef(0);
 
   const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
+  const pendingTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const DURATION = 60;
+
+  // Cleanup interval and pending timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      pendingTimeoutsRef.current.forEach(t => clearTimeout(t));
+      pendingTimeoutsRef.current = [];
+    };
+  }, []);
 
   // Load stats from localStorage
   useEffect(() => {
@@ -95,6 +106,8 @@ export default function Home() {
     setMatchesPlayed(stats.totalMatches);
     const wId = getEquippedWeapon();
     setEquippedWeapon(WEAPONS.find(w => w.id === wId) || WEAPONS[0]);
+    const sId = getEquippedSkin();
+    setEquippedSkin(ROBOT_SKINS.find(s => s.id === sId) || ROBOT_SKINS[0]);
     setMyElo(parseInt(localStorage.getItem('bta_elo') || '1000'));
     setBpState(getBattlePassState());
     setBpLevelUp(null);
@@ -108,6 +121,9 @@ export default function Home() {
     const nearbyOpps = AI_OPPONENTS.filter(o => Math.abs(o.elo - savedElo) < 400);
     const opp = nearbyOpps[Math.floor(Math.random() * nearbyOpps.length)] || AI_OPPONENTS[2];
     setOpponent(opp);
+
+    pendingTimeoutsRef.current.forEach(t => clearTimeout(t));
+    pendingTimeoutsRef.current = [];
 
     setPhase('fighting');
     setElapsed(0);
@@ -203,7 +219,8 @@ export default function Home() {
           setDmg({ side: 'left', text: `-$${Math.abs(pnl).toFixed(0)}` });
           setScreenFlash('rgba(239,68,68,0.12)');
         }
-        setTimeout(() => { setB1Act('idle'); setB2Act('idle'); setDmg(null); setShake(false); setScreenFlash(null); }, 500);
+        const t1 = setTimeout(() => { setB1Act('idle'); setB2Act('idle'); setDmg(null); setShake(false); setScreenFlash(null); }, 500);
+        pendingTimeoutsRef.current.push(t1);
       }
 
       // Opponent trades — difficulty scales with their ELO
@@ -217,7 +234,8 @@ export default function Home() {
 
         if (oppWon && Math.random() < 0.3) {
           setB2Act('attack'); setB1Act('hit');
-          setTimeout(() => { setB1Act('idle'); setB2Act('idle'); }, 400);
+          const t2 = setTimeout(() => { setB1Act('idle'); setB2Act('idle'); }, 400);
+          pendingTimeoutsRef.current.push(t2);
         }
       }
 
@@ -466,12 +484,12 @@ export default function Home() {
             {/* My bot */}
             <div className="flex flex-col items-center">
               <AnimatePresence>{dmg?.side === 'left' && (
-                <motion.div key="dl" className="absolute -top-2 left-[15%] z-20 font-black font-[var(--font-mono)] text-sm text-[#EF4444]"
-                  style={{ textShadow: '0 0 8px #EF4444' }}
+                <motion.div key="dl" className="absolute -top-2 left-[15%] z-20 font-black font-[var(--font-mono)] text-sm"
+                  style={{ color: equippedWeapon.attackColor, textShadow: `0 0 8px ${equippedWeapon.attackColor}` }}
                   initial={{ opacity: 1, y: 0 }} animate={{ opacity: 0, y: -30 }} transition={{ duration: 0.7 }}
                 >{dmg.text}</motion.div>
               )}</AnimatePresence>
-              <RobotSVG action={b1Act} color="#6366F1" side="left" />
+              <RobotSVG action={b1Act} color={equippedSkin.bodyColor} side="left" />
               <p className="text-sm font-bold mt-1">You</p>
               <p className="text-xs font-[var(--font-mono)]" style={{ color: myPnl >= 0 ? '#10B981' : '#EF4444' }}>{formatPnl(myPnl)}</p>
               <p className="text-[10px] text-[var(--text-tertiary)]">{myTrades}T / {myWins}W</p>
@@ -491,8 +509,8 @@ export default function Home() {
             {/* Opponent */}
             <div className="flex flex-col items-center">
               <AnimatePresence>{dmg?.side === 'right' && (
-                <motion.div key="dr" className="absolute -top-2 right-[15%] z-20 font-black font-[var(--font-mono)] text-sm text-[#EF4444]"
-                  style={{ textShadow: '0 0 8px #EF4444' }}
+                <motion.div key="dr" className="absolute -top-2 right-[15%] z-20 font-black font-[var(--font-mono)] text-sm"
+                  style={{ color: equippedWeapon.attackColor, textShadow: `0 0 8px ${equippedWeapon.attackColor}` }}
                   initial={{ opacity: 1, y: 0 }} animate={{ opacity: 0, y: -30 }} transition={{ duration: 0.7 }}
                 >{dmg.text}</motion.div>
               )}</AnimatePresence>
@@ -556,7 +574,7 @@ export default function Home() {
               WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
             }}
           >
-            {iWon ? 'VICTORY!' : myPnl === oppPnl ? 'DRAW' : 'DEFEAT'}
+            {iWon ? 'VICTORY!' : Math.abs(myPnl - oppPnl) < 1 ? 'DRAW' : 'DEFEAT'}
           </motion.h1>
 
           {/* ELO change */}
