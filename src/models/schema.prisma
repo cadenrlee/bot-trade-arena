@@ -626,3 +626,33 @@ model EloDecay {
 
   updatedAt       DateTime @updatedAt
 }
+
+// ============================================================
+// QUICK MATCH (Real Multiplayer Quick Battle)
+// ============================================================
+
+model QuickMatchHistory {
+  id              String   @id @default(cuid())
+  odId            String   // Original match ID from in-memory
+  odUserId        String   // The authenticated user who owns this record
+
+  playerName      String
+  playerElo       Int
+  opponentName    String
+  opponentElo     Int
+
+  playerPnl       Float
+  playerTrades    Int
+  playerWins      Int
+  opponentPnl     Float
+  opponentTrades  Int
+  opponentWins    Int
+
+  isWinner        Boolean
+  isDraw          Boolean  @default(false)
+  tickCount       Int      @default(300)
+
+  createdAt       DateTime @default(now())
+
+  @@index([odUserId])
+}

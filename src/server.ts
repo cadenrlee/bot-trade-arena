@@ -22,6 +22,7 @@ import notificationRoutes from './api/routes/notifications';
 import templateRoutes from './api/routes/templates';
 import alpacaRoutes from './api/routes/alpaca';
 import socialRoutes from './api/routes/social';
+import quickmatchRoutes from './api/routes/quickmatch';
 
 // Service imports
 import { MarketDataService } from './services/marketData';
@@ -69,6 +70,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/alpaca', alpacaRoutes);
 app.use('/api/social', socialRoutes);
+app.use('/api/quickmatch', quickmatchRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

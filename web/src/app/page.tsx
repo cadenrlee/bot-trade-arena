@@ -17,6 +17,7 @@ import {
   getBattlePassState, addBattlePassXP, claimDailyBonus, getXPForCurrentLevel,
   SEASON_NAME, type BattlePassTier,
 } from '@/lib/battlepass';
+import { addMatchToHistory } from '@/lib/matchHistory';
 
 // ============================================================
 // QUICK BATTLE — The Core Loop
@@ -186,6 +187,28 @@ export default function Home() {
         if (bpResult.leveledUp && bpResult.reward) {
           setBpLevelUp(bpResult.reward);
         }
+
+        // Save to match history
+        addMatchToHistory({
+          id: `qb_${Date.now()}`,
+          timestamp: Date.now(),
+          opponent: opp.name,
+          opponentElo: opp.elo,
+          myPnl: myP,
+          oppPnl: oppP,
+          myPnlPct: (myP / 100000) * 100,
+          oppPnlPct: (oppP / 100000) * 100,
+          myTrades: myT,
+          oppTrades: oppT,
+          won,
+          eloChange: eloDelta,
+          newElo,
+          strategy,
+          eventsCaught: 0, // will be updated by state
+          eventsMissed: 0,
+          xpEarned,
+          isMultiplayer: false,
+        });
 
         setStreak(newStats.winStreak);
         setMatchesPlayed(newStats.totalMatches);

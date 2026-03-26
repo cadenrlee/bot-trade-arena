@@ -39,6 +39,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <NavLink href="/" icon="⚔" label="Battle" />
           <NavLink href="/armory" icon="🗡" label="Armory" />
           <NavLink href="/battlepass" icon="⭐" label="Battle Pass" />
+          <NavLink href="/history" icon="📜" label="History" />
           <NavLink href="/leaderboards" icon="🏆" label="Rankings" />
           <NavLink href="/social" icon="👥" label="Friends" />
           {user && <NavLink href="/bots" icon="🤖" label="My Bots" />}
