@@ -13,9 +13,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const loadFromStorage = useAuthStore((s) => s.loadFromStorage);
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
+  const token = useAuthStore((s) => s.token);
   const pathname = usePathname();
   const isAuthPage = AUTH_PAGES.includes(pathname);
-  const isFullScreen = isAuthPage || (pathname === '/' && !user);
+  // Use token (synchronous from localStorage) not user (async from API) to avoid flash
+  const hasAuth = !!(user || token);
+  const isFullScreen = isAuthPage || (pathname === '/' && !hasAuth);
 
   useEffect(() => {
     loadFromStorage();
