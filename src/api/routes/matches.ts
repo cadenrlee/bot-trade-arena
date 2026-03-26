@@ -80,9 +80,10 @@ router.post('/vs-ai', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    // Check if user wants stock mode (requires market hours)
-    let matchMode = mode || 'crypto'; // 'crypto' or 'stocks'
+    // Determine match mode — always allow matches, adapt data source
+    let matchMode = mode || 'crypto';
     let marketStatus = null;
+    let dataSource = 'live';
 
     if (matchMode === 'stocks') {
       const apiKey = process.env.ALPACA_API_KEY;
@@ -90,12 +91,9 @@ router.post('/vs-ai', authMiddleware, async (req: Request, res: Response) => {
       if (apiKey && apiSecret) {
         marketStatus = await alpacaStatsService.isMarketOpen(apiKey, apiSecret);
         if (!marketStatus.isOpen) {
-          res.status(400).json({
-            error: 'Stock market is closed',
-            marketStatus,
-            message: `Market is closed. Next open: ${marketStatus.nextOpen}. Use crypto mode for 24/7 matches.`,
-          });
-          return;
+          // Market closed — use simulated data instead of blocking
+          dataSource = 'replay';
+          matchMode = 'crypto'; // Fall back to crypto/simulated
         }
       }
     }
@@ -109,8 +107,11 @@ router.post('/vs-ai', authMiddleware, async (req: Request, res: Response) => {
     res.json({
       matchId: result.matchId,
       mode: matchMode,
+      dataSource,
       marketStatus,
-      message: `Match started! (${matchMode} mode)`,
+      message: dataSource === 'replay'
+        ? 'Match started! Using simulated market data (stock market is closed).'
+        : `Match started! (${matchMode} mode)`,
     });
   } catch (err) {
     console.error('Start vs AI error:', err);

@@ -16,80 +16,200 @@ import { Button } from '@/components/ui/button';
 import { formatDuration, formatPnl } from '@/lib/utils';
 
 // ============================================================
-// ROBOT FIGHTER COMPONENT (inline for self-contained page)
+// ROBOT FIGHTER — Full animated SVG robot with arms, legs, effects
 // ============================================================
 
-function Robot({ side, action, color }: { side: 'left' | 'right'; action: string; color: string }) {
-  const eyeColor = action === 'hit' ? '#EF4444' : action === 'win' ? '#22C55E' : color;
-  const bodyBg = action === 'hit' ? 'rgba(239,68,68,0.15)' : `color-mix(in srgb, ${color} 15%, transparent)`;
-  const borderColor = action === 'hit' ? 'rgba(239,68,68,0.4)' : `color-mix(in srgb, ${color} 40%, transparent)`;
-  const mouthWidth = action === 'win' ? 14 : action === 'hit' ? 6 : 10;
+function Sparks({ active, color, side }: { active: boolean; color: string; side: 'left' | 'right' }) {
+  if (!active) return null;
+  const particles = Array.from({ length: 8 }, (_, i) => i);
+  return (
+    <div className="absolute inset-0 pointer-events-none">
+      {particles.map((i) => {
+        const angle = (i / 8) * 360;
+        const dist = 20 + Math.random() * 25;
+        const x = Math.cos((angle * Math.PI) / 180) * dist;
+        const y = Math.sin((angle * Math.PI) / 180) * dist;
+        const size = 2 + Math.random() * 4;
+        return (
+          <motion.div
+            key={i}
+            className="absolute rounded-full"
+            style={{
+              width: size, height: size, background: color,
+              left: '50%', top: '40%',
+              boxShadow: `0 0 ${size * 2}px ${color}`,
+            }}
+            initial={{ x: 0, y: 0, opacity: 1, scale: 1 }}
+            animate={{ x, y, opacity: 0, scale: 0 }}
+            transition={{ duration: 0.5 + Math.random() * 0.3, ease: 'easeOut' }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function Robot({ side, action, color, pnl }: { side: 'left' | 'right'; action: string; color: string; pnl: number }) {
+  const isHit = action === 'hit';
+  const isAttack = action === 'attack';
+  const isWin = action === 'win';
+  const isLose = action === 'lose';
+  const faceColor = isHit ? '#EF4444' : isWin ? '#22C55E' : color;
+  const glow = isAttack ? `0 0 30px ${color}` : isWin ? `0 0 40px ${color}` : 'none';
+  const mirror = side === 'right' ? -1 : 1;
 
   return (
     <motion.div
+      className="relative"
       animate={
-        action === 'idle' ? { y: [0, -6, 0] } :
-        action === 'attack' ? { x: side === 'left' ? [0, 40, 0] : [0, -40, 0], rotate: side === 'left' ? [0, 8, 0] : [0, -8, 0] } :
-        action === 'hit' ? { x: side === 'left' ? [0, -15, 0] : [0, 15, 0], rotate: side === 'left' ? [0, -5, 0] : [0, 5, 0] } :
-        action === 'win' ? { y: [0, -15, 0], scale: [1, 1.08, 1] } :
-        action === 'lose' ? { opacity: 0.4, scale: 0.9 } :
+        action === 'idle' ? { y: [0, -8, 0] } :
+        isAttack ? { x: [0, 50 * mirror, 0], rotate: [0, 10 * mirror, 0] } :
+        isHit ? { x: [0, -20 * mirror, 0], rotate: [0, -8 * mirror, 0] } :
+        isWin ? { y: [0, -18, 0], scale: [1, 1.1, 1] } :
+        isLose ? { opacity: 0.35, scale: 0.85, y: 10 } :
         {}
       }
       transition={
-        action === 'idle' ? { duration: 2, repeat: Infinity, ease: 'easeInOut' } :
-        action === 'win' ? { duration: 0.6, repeat: Infinity, ease: 'easeInOut' } :
+        action === 'idle' ? { duration: 1.8, repeat: Infinity, ease: 'easeInOut' } :
+        isWin ? { duration: 0.7, repeat: Infinity, ease: 'easeInOut' } :
         { duration: 0.4, ease: 'easeOut' }
       }
     >
-      <div
-        className="w-20 h-24 rounded-2xl flex flex-col items-center justify-center transition-colors duration-200"
-        style={{ background: bodyBg, border: `2px solid ${borderColor}` }}
-      >
+      {/* Energy glow behind robot */}
+      {(isAttack || isWin) && (
+        <motion.div
+          className="absolute rounded-full blur-xl"
+          style={{ background: color, width: 80, height: 80, left: '50%', top: '50%', transform: 'translate(-50%,-50%)' }}
+          initial={{ opacity: 0, scale: 0.5 }}
+          animate={{ opacity: [0.3, 0.1], scale: [0.8, 1.2] }}
+          transition={{ duration: 0.5 }}
+        />
+      )}
+
+      {/* Hit sparks */}
+      <Sparks active={isHit} color="#EF4444" side={side} />
+      {isAttack && <Sparks active={true} color={color} side={side} />}
+
+      <svg width="90" height="120" viewBox="0 0 90 120" style={{ filter: `drop-shadow(${glow})` }}>
         {/* Antenna */}
-        <div className="w-1.5 h-3 rounded-full mb-1" style={{ background: color, opacity: 0.6 }} />
+        <motion.line x1="45" y1="8" x2="45" y2="18" stroke={color} strokeWidth="3" strokeLinecap="round"
+          animate={isWin ? { y1: [8, 3, 8] } : {}}
+          transition={{ duration: 0.5, repeat: Infinity }}
+        />
+        <motion.circle cx="45" cy="5" r="4" fill={color}
+          animate={isWin ? { r: [4, 5, 4], opacity: [1, 0.6, 1] } : isAttack ? { r: [4, 6, 4] } : {}}
+          transition={{ duration: 0.4 }}
+        />
+
+        {/* Head */}
+        <rect x="22" y="18" width="46" height="36" rx="10" fill={isHit ? 'rgba(239,68,68,0.2)' : `color-mix(in srgb, ${color} 12%, #111827)`} stroke={isHit ? '#EF4444' : color} strokeWidth="2" opacity={isLose ? 0.5 : 1} />
+
         {/* Eyes */}
-        <div className="flex gap-2.5 mb-1.5">
-          <motion.div
-            className="w-3 h-3 rounded-full"
-            style={{ background: eyeColor }}
-            animate={action === 'hit' ? { scale: [1, 0.5, 1] } : {}}
-            transition={{ duration: 0.3 }}
-          />
-          <motion.div
-            className="w-3 h-3 rounded-full"
-            style={{ background: eyeColor }}
-            animate={action === 'hit' ? { scale: [1, 0.5, 1] } : {}}
-            transition={{ duration: 0.3 }}
-          />
-        </div>
+        <motion.circle cx="36" cy="32" r={isHit ? 2 : 4} fill={faceColor}
+          animate={isHit ? { cy: [32, 34, 32], r: [4, 2, 4] } : isAttack ? { r: [4, 5, 4] } : {}}
+        />
+        <motion.circle cx="54" cy="32" r={isHit ? 2 : 4} fill={faceColor}
+          animate={isHit ? { cy: [32, 34, 32], r: [4, 2, 4] } : isAttack ? { r: [4, 5, 4] } : {}}
+        />
+        {/* Eye shine */}
+        <circle cx="34" cy="30" r="1.5" fill="white" opacity="0.6" />
+        <circle cx="52" cy="30" r="1.5" fill="white" opacity="0.6" />
+
         {/* Mouth */}
-        <div className="rounded-full transition-all duration-200" style={{
-          width: mouthWidth,
-          height: action === 'win' ? 6 : 2,
-          background: action === 'win' ? '#22C55E' : action === 'hit' ? '#EF4444' : `color-mix(in srgb, ${color} 50%, transparent)`,
-          borderRadius: action === 'win' ? '0 0 8px 8px' : '4px',
-        }} />
+        {isWin ? (
+          <path d="M 36 42 Q 45 50 54 42" stroke="#22C55E" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+        ) : isHit ? (
+          <path d="M 36 46 Q 45 40 54 46" stroke="#EF4444" strokeWidth="2" fill="none" strokeLinecap="round" />
+        ) : isAttack ? (
+          <circle cx="45" cy="44" r="3" fill={color} opacity="0.7" />
+        ) : (
+          <line x1="38" y1="44" x2="52" y2="44" stroke={color} strokeWidth="2" strokeLinecap="round" opacity="0.5" />
+        )}
+
+        {/* Body */}
+        <rect x="27" y="56" width="36" height="30" rx="6" fill={isHit ? 'rgba(239,68,68,0.15)' : `color-mix(in srgb, ${color} 10%, #111827)`} stroke={isHit ? '#EF4444' : color} strokeWidth="1.5" opacity={isLose ? 0.5 : 1} />
+        {/* Body detail — power core */}
+        <motion.circle cx="45" cy="71" r="5" fill={color} opacity={0.3}
+          animate={isAttack ? { opacity: [0.3, 0.8, 0.3], r: [5, 7, 5] } : isWin ? { opacity: [0.3, 0.6, 0.3] } : {}}
+          transition={{ duration: 0.5 }}
+        />
+        <circle cx="45" cy="71" r="2" fill={color} opacity="0.6" />
+
+        {/* Left arm */}
+        <motion.g
+          animate={
+            isAttack && side === 'left' ? { rotate: [0, -45, 0], x: [0, 10, 0] } :
+            isAttack && side === 'right' ? { rotate: [0, 20, 0] } :
+            isHit ? { rotate: [0, 15, 0] } :
+            action === 'idle' ? { rotate: [0, -3, 0] } : {}
+          }
+          transition={{ duration: isAttack ? 0.3 : 1.5, repeat: action === 'idle' ? Infinity : 0 }}
+          style={{ transformOrigin: '27px 62px' }}
+        >
+          <rect x="8" y="58" width="19" height="8" rx="4" fill={color} opacity={isLose ? 0.4 : 0.7} />
+          {/* Fist */}
+          <circle cx="10" cy="62" r="5" fill={isAttack ? color : `color-mix(in srgb, ${color} 70%, #111827)`} />
+        </motion.g>
+
+        {/* Right arm */}
+        <motion.g
+          animate={
+            isAttack && side === 'right' ? { rotate: [0, 45, 0], x: [0, -10, 0] } :
+            isAttack && side === 'left' ? { rotate: [0, -20, 0] } :
+            isHit ? { rotate: [0, -15, 0] } :
+            action === 'idle' ? { rotate: [0, 3, 0] } : {}
+          }
+          transition={{ duration: isAttack ? 0.3 : 1.5, repeat: action === 'idle' ? Infinity : 0 }}
+          style={{ transformOrigin: '63px 62px' }}
+        >
+          <rect x="63" y="58" width="19" height="8" rx="4" fill={color} opacity={isLose ? 0.4 : 0.7} />
+          <circle cx="80" cy="62" r="5" fill={isAttack ? color : `color-mix(in srgb, ${color} 70%, #111827)`} />
+        </motion.g>
+
+        {/* Legs */}
+        <motion.rect x="32" y="87" width="10" height="18" rx="4" fill={color} opacity={isLose ? 0.3 : 0.5}
+          animate={action === 'idle' ? { height: [18, 16, 18] } : isWin ? { height: [18, 14, 18] } : {}}
+          transition={{ duration: action === 'idle' ? 1.8 : 0.7, repeat: Infinity }}
+        />
+        <motion.rect x="48" y="87" width="10" height="18" rx="4" fill={color} opacity={isLose ? 0.3 : 0.5}
+          animate={action === 'idle' ? { height: [16, 18, 16] } : isWin ? { height: [14, 18, 14] } : {}}
+          transition={{ duration: action === 'idle' ? 1.8 : 0.7, repeat: Infinity }}
+        />
+        {/* Feet */}
+        <rect x="29" y="103" width="16" height="6" rx="3" fill={color} opacity={isLose ? 0.3 : 0.4} />
+        <rect x="45" y="103" width="16" height="6" rx="3" fill={color} opacity={isLose ? 0.3 : 0.4} />
+      </svg>
+
+      {/* P&L badge under robot */}
+      <div className="absolute -bottom-1 left-1/2 -translate-x-1/2">
+        <div className="px-2 py-0.5 rounded-full text-[10px] font-bold font-[var(--font-mono)]" style={{
+          background: pnl >= 0 ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+          color: pnl >= 0 ? '#10B981' : '#EF4444',
+          border: `1px solid ${pnl >= 0 ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
+        }}>
+          {pnl >= 0 ? '+' : ''}{pnl.toFixed(1)}%
+        </div>
       </div>
     </motion.div>
   );
 }
 
-function DamageNumber({ value, side }: { value: string; side: 'left' | 'right' }) {
+function DamageNumber({ value, side, isCrit }: { value: string; side: 'left' | 'right'; isCrit?: boolean }) {
   return (
     <motion.div
-      initial={{ opacity: 1, y: 0 }}
-      animate={{ opacity: 0, y: -30 }}
+      initial={{ opacity: 1, y: 0, scale: isCrit ? 1.5 : 1 }}
+      animate={{ opacity: 0, y: -40, scale: isCrit ? 2 : 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.8 }}
-      className="absolute font-bold font-[var(--font-mono)] text-sm"
+      transition={{ duration: 0.9 }}
+      className="absolute font-black font-[var(--font-mono)] z-10"
       style={{
-        color: 'var(--accent-red)',
-        [side === 'left' ? 'left' : 'right']: '50%',
-        transform: 'translateX(-50%)',
-        top: -10,
+        color: isCrit ? '#F59E0B' : '#EF4444',
+        fontSize: isCrit ? 18 : 14,
+        textShadow: isCrit ? '0 0 10px #F59E0B' : '0 0 6px rgba(239,68,68,0.5)',
+        left: '50%', transform: 'translateX(-50%)', top: -15,
       }}
     >
-      {value}
+      {isCrit && 'CRIT! '}{value}
     </motion.div>
   );
 }
@@ -309,8 +429,8 @@ export default function MatchSpectatorPage() {
             <div className="relative flex items-end justify-between px-6 h-40">
               {/* Bot 1 */}
               <div className="relative flex flex-col items-center">
-                <AnimatePresence>{dmg1 && <DamageNumber key="d1" value={dmg1} side="left" />}</AnimatePresence>
-                <Robot side="left" action={bot1Action} color="var(--accent-indigo)" />
+                <AnimatePresence>{dmg1 && <DamageNumber key="d1" value={dmg1} side="left" isCrit={shake} />}</AnimatePresence>
+                <Robot side="left" action={bot1Action} color="var(--accent-indigo)" pnl={bot1PnlPct} />
                 <p className="mt-2 text-sm font-bold truncate max-w-[100px]">{bot1.name}</p>
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="text-xs font-[var(--font-mono)]" style={{ color: bot1Pnl >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)' }}>
@@ -339,8 +459,8 @@ export default function MatchSpectatorPage() {
 
               {/* Bot 2 */}
               <div className="relative flex flex-col items-center">
-                <AnimatePresence>{dmg2 && <DamageNumber key="d2" value={dmg2} side="right" />}</AnimatePresence>
-                <Robot side="right" action={bot2Action} color="var(--accent-emerald)" />
+                <AnimatePresence>{dmg2 && <DamageNumber key="d2" value={dmg2} side="right" isCrit={shake} />}</AnimatePresence>
+                <Robot side="right" action={bot2Action} color="var(--accent-emerald)" pnl={bot2PnlPct} />
                 <p className="mt-2 text-sm font-bold truncate max-w-[100px]">{bot2.name}</p>
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="text-xs font-[var(--font-mono)]" style={{ color: bot2Pnl >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)' }}>

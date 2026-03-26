@@ -35,7 +35,7 @@ router.get('/', async (req: Request, res: Response) => {
       where: { userId: req.user!.userId },
       orderBy: { createdAt: 'desc' },
     });
-    res.json(bots.map(sanitizeBot));
+    res.json(bots.map(b => sanitizeBot(b)));
   } catch (err) {
     console.error('List bots error:', err);
     res.status(500).json({ error: 'Internal server error' });
