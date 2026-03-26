@@ -202,4 +202,57 @@ router.get('/:matchId/replay', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/matches/:matchId/share — Get shareable match summary
+router.get('/:matchId/share', async (req: Request, res: Response) => {
+  try {
+    const matchId = req.params.matchId as string;
+    const match = await prisma.match.findUnique({
+      where: { id: matchId },
+      include: {
+        bot1: { select: { id: true, name: true, elo: true } },
+        bot2: { select: { id: true, name: true, elo: true } },
+        player1: { select: { id: true, username: true } },
+        player2: { select: { id: true, username: true } },
+      },
+    });
+
+    if (!match) {
+      res.status(404).json({ error: 'Match not found' });
+      return;
+    }
+
+    const winnerBot = match.winnerId === match.bot1.id ? match.bot1 : match.bot2;
+    const winnerPlayer = match.winnerId === match.bot1.id ? match.player1 : match.player2;
+
+    res.json({
+      matchId: match.id,
+      status: match.status,
+      winner: match.winnerId
+        ? { botName: winnerBot.name, playerUsername: winnerPlayer.username }
+        : null,
+      isDraw: match.status === 'COMPLETED' && !match.winnerId,
+      bot1: {
+        name: match.bot1.name,
+        player: match.player1.username,
+        score: match.bot1Score,
+        pnl: match.bot1Pnl,
+        trades: match.bot1Trades,
+      },
+      bot2: {
+        name: match.bot2.name,
+        player: match.player2.username,
+        score: match.bot2Score,
+        pnl: match.bot2Pnl,
+        trades: match.bot2Trades,
+      },
+      duration: match.duration,
+      tier: match.tier,
+      shareUrl: `/matches/${match.id}/results`,
+    });
+  } catch (err) {
+    console.error('Get share data error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

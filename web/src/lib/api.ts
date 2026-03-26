@@ -164,6 +164,35 @@ class ApiClient {
   getPostComments(id: string) { return this.request<any[]>(`/api/feed/${id}/comments`); }
   deletePost(id: string) { return this.request<any>(`/api/feed/${id}`, { method: 'DELETE' }); }
 
+  // Notifications
+  getNotifications(page = 1) { return this.request<any>(`/api/notifications?page=${page}`); }
+  getUnreadNotifications() { return this.request<any[]>('/api/notifications/unread'); }
+  markNotificationRead(id: string) { return this.request<any>(`/api/notifications/${id}/read`, { method: 'POST' }); }
+  markAllNotificationsRead() { return this.request<any>('/api/notifications/read-all', { method: 'POST' }); }
+
+  // Clan chat
+  getClanMessages(clanId: string) { return this.request<any[]>(`/api/clans/${clanId}/messages`); }
+  sendClanMessage(clanId: string, content: string) {
+    return this.request<any>(`/api/clans/${clanId}/messages`, { method: 'POST', body: JSON.stringify({ content }) });
+  }
+
+  // Match sharing
+  getMatchShareData(matchId: string) { return this.request<any>(`/api/matches/${matchId}/share`); }
+
+  // Admin
+  getAdminStats() { return this.request<any>('/api/admin/stats'); }
+  adminCreateSeason(data: { name: string; number: number; startDate: string; endDate: string; allowedSymbols?: string[] }) {
+    return this.request<any>('/api/admin/seasons', { method: 'POST', body: JSON.stringify(data) });
+  }
+  adminCreateTournament(data: { name: string; format: string; maxEntrants: number; registrationOpen: string; registrationClose: string; startDate: string }) {
+    return this.request<any>('/api/admin/tournaments', { method: 'POST', body: JSON.stringify(data) });
+  }
+  adminRunDecay() { return this.request<any>('/api/admin/run-decay', { method: 'POST' }); }
+  adminSendStreakWarnings() { return this.request<any>('/api/admin/send-streak-warnings', { method: 'POST' }); }
+  adminGrantFreezes() { return this.request<any>('/api/admin/grant-freezes', { method: 'POST' }); }
+  adminUpdateLeaderboards() { return this.request<any>('/api/admin/update-leaderboards', { method: 'POST' }); }
+  adminClearTestData() { return this.request<any>('/api/admin/clear-test-data', { method: 'POST' }); }
+
   // Health
   getHealth() { return this.request<any>('/api/health'); }
 }

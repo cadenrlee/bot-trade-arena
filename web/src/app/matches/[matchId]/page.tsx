@@ -408,6 +408,7 @@ export default function MatchSpectatorPage() {
               </div>
               <div className="flex justify-center gap-3">
                 <Button onClick={() => router.push('/matches/live')}>Play Again</Button>
+                <Button variant="secondary" onClick={() => router.push(`/matches/${matchId}/replay`)}>Watch Replay</Button>
                 <Button variant="secondary" onClick={() => router.push('/social')}>Challenge a Friend</Button>
               </div>
             </Card>

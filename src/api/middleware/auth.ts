@@ -5,6 +5,7 @@ import { config } from '../../lib/config';
 export interface AuthPayload {
   userId: string;
   username: string;
+  plan?: string;
 }
 
 declare global {

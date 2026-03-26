@@ -25,6 +25,10 @@ import socialRoutes from './api/routes/social';
 import quickmatchRoutes from './api/routes/quickmatch';
 import feedRoutes from './api/routes/feed';
 import performanceLeaderboardRoutes from './api/routes/performanceLeaderboard';
+import adminRoutes from './api/routes/admin';
+
+// Sentry
+import { initSentry, captureException } from './lib/sentry';
 
 // Service imports
 import { MarketDataService } from './services/marketData';
@@ -33,6 +37,7 @@ import { BotWebSocketServer } from './services/botWebSocket';
 import { SpectatorWebSocketServer } from './services/spectatorWebSocket';
 import { houseBotService } from './services/houseBots';
 import { MarketRecorder } from './services/marketRecorder';
+import { scheduledJobs } from './services/scheduledJobs';
 
 const app = express();
 
@@ -49,6 +54,8 @@ app.use((_req, res, next) => {
 });
 
 app.use(cors({ origin: config.corsOrigin, credentials: true }));
+// Stripe webhook needs raw body for signature verification — mount BEFORE json parser
+app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '1mb' }));
 app.use(rateLimit);
 
@@ -75,6 +82,7 @@ app.use('/api/social', socialRoutes);
 app.use('/api/quickmatch', quickmatchRoutes);
 app.use('/api/feed', feedRoutes);
 app.use('/api/performance-leaderboard', cacheMiddleware(30000), performanceLeaderboardRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -98,6 +106,7 @@ app.use((_req, res) => {
 // Error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled error:', err);
+  captureException(err);
   res.status(500).json({ error: 'Internal server error' });
 });
 
@@ -113,6 +122,9 @@ const orchestrator = new MatchOrchestrator(marketData);
 app.locals.orchestrator = orchestrator;
 let botWsServer: BotWebSocketServer | null = null;
 let spectatorWsServer: SpectatorWebSocketServer | null = null;
+
+// Initialize Sentry before starting server
+initSentry();
 
 server.listen(config.port, () => {
   console.log(`
@@ -143,6 +155,9 @@ server.listen(config.port, () => {
   botWsServer = new BotWebSocketServer(server, orchestrator);
   spectatorWsServer = new SpectatorWebSocketServer(server, orchestrator);
 
+  // Start scheduled jobs (ELO decay, streak warnings, weekly freezes)
+  scheduledJobs.start();
+
   console.log(`[Server] Listening on port ${config.port}`);
   console.log(`[Server] 60+ REST endpoints active`);
   console.log(`[Server] Bot WS + Spectator WS active`);
@@ -154,6 +169,7 @@ process.on('SIGINT', shutdown);
 
 function shutdown() {
   console.log('\n[Server] Shutting down...');
+  scheduledJobs.stop();
   orchestrator.stop();
   marketData.disconnect();
   if (botWsServer) botWsServer.close();

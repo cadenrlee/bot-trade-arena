@@ -5,6 +5,11 @@ import { eloToTier } from '../engine/scoring';
 import { MarketDataService } from './marketData';
 import { houseBotService } from './houseBots';
 import { templateBotRunner } from './templateBots';
+import { streakService } from './streakService';
+import { xpService } from './xpService';
+import { questService } from './questService';
+import { achievementService } from './achievementService';
+import { eloDecayService } from './eloDecayService';
 import { config } from '../lib/config';
 import prisma from '../lib/prisma';
 import crypto from 'crypto';
@@ -447,6 +452,42 @@ export class MatchOrchestrator extends EventEmitter {
           },
         })] : []),
       ]);
+
+      // === RETENTION: Award XP, update streaks, quests, achievements ===
+      // Do these async (don't block match completion)
+      const user1Id = bot1?.userId;
+      const user2Id = bot2?.userId;
+
+      (async () => {
+        try {
+          if (user1Id) {
+            await streakService.recordActivity(user1Id);
+            await xpService.awardXp(user1Id, 'MATCH', 'Completed a match', matchId);
+            if (b1IsWinner) await xpService.awardXp(user1Id, 'WIN', 'Won a match', matchId);
+            await questService.updateProgress(user1Id, 'WIN_MATCH', b1IsWinner ? 1 : 0);
+            await questService.updateProgress(user1Id, 'PROFITABLE_TRADES', result.bot1.score.totalTrades);
+            await achievementService.checkAndAward(user1Id, {
+              type: 'match_end',
+              data: { isWin: b1IsWinner, totalWins: b1IsWinner ? 1 : 0, score: result.bot1.score.compositeScore, winStreak: b1WinStreak, eloGap: 0, totalMatches: 0 },
+            });
+            await eloDecayService.stopDecay(user1Id);
+          }
+          if (user2Id) {
+            await streakService.recordActivity(user2Id);
+            await xpService.awardXp(user2Id, 'MATCH', 'Completed a match', matchId);
+            if (b2IsWinner) await xpService.awardXp(user2Id, 'WIN', 'Won a match', matchId);
+            await questService.updateProgress(user2Id, 'WIN_MATCH', b2IsWinner ? 1 : 0);
+            await questService.updateProgress(user2Id, 'PROFITABLE_TRADES', result.bot2.score.totalTrades);
+            await achievementService.checkAndAward(user2Id, {
+              type: 'match_end',
+              data: { isWin: b2IsWinner, totalWins: b2IsWinner ? 1 : 0, score: result.bot2.score.compositeScore, winStreak: b2WinStreak, eloGap: 0, totalMatches: 0 },
+            });
+            await eloDecayService.stopDecay(user2Id);
+          }
+        } catch (err) {
+          console.error('[Orchestrator] Retention update error (non-fatal):', err);
+        }
+      })();
     } catch (err) {
       console.error('[Orchestrator] Error persisting match results:', err);
     }

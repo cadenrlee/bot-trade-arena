@@ -55,6 +55,7 @@ model User {
   posts         Post[]    @relation("PostAuthor")
   postLikes     PostLike[] @relation("PostLikeUser")
   postComments  PostComment[] @relation("PostCommentAuthor")
+  clanMessages  ClanMessage[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -385,6 +386,7 @@ model Clan {
   avgElo        Float     @default(1000)
 
   members       ClanMember[]
+  messages      ClanMessage[]
   createdAt     DateTime  @default(now())
 }
 
@@ -396,6 +398,17 @@ model ClanMember {
   clan          Clan     @relation(fields: [clanId], references: [id])
   role          String   @default("MEMBER")
   joinedAt      DateTime @default(now())
+}
+
+model ClanMessage {
+  id        String   @id @default(cuid())
+  clanId    String
+  clan      Clan     @relation(fields: [clanId], references: [id], onDelete: Cascade)
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
 }
 
 // ============================================================

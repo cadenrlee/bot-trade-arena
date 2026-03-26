@@ -347,4 +347,94 @@ router.get('/:id/stats', async (req: Request, res: Response) => {
   }
 });
 
+// ============================================================
+// CLAN CHAT
+// ============================================================
+
+const sendMessageSchema = z.object({
+  content: z.string().min(1).max(500),
+});
+
+// GET /api/clans/:id/messages — Get last 50 messages
+router.get('/:id/messages', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const clanId = req.params.id as string;
+
+    // Verify the user is a member of this clan
+    const membership = await prisma.clanMember.findUnique({
+      where: { userId: req.user!.userId },
+    });
+    if (!membership || membership.clanId !== clanId) {
+      res.status(403).json({ error: 'You must be a clan member to view messages' });
+      return;
+    }
+
+    const messages = await prisma.clanMessage.findMany({
+      where: { clanId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatarUrl: true,
+          },
+        },
+      },
+    });
+
+    // Return in chronological order (oldest first)
+    res.json(messages.reverse());
+  } catch (err) {
+    console.error('Get clan messages error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/clans/:id/messages — Send a message
+router.post('/:id/messages', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const clanId = req.params.id as string;
+    const { content } = sendMessageSchema.parse(req.body);
+
+    // Verify the user is a member of this clan
+    const membership = await prisma.clanMember.findUnique({
+      where: { userId: req.user!.userId },
+    });
+    if (!membership || membership.clanId !== clanId) {
+      res.status(403).json({ error: 'You must be a clan member to send messages' });
+      return;
+    }
+
+    const message = await prisma.clanMessage.create({
+      data: {
+        clanId,
+        userId: req.user!.userId,
+        content,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatarUrl: true,
+          },
+        },
+      },
+    });
+
+    res.status(201).json(message);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: err.errors });
+      return;
+    }
+    console.error('Send clan message error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

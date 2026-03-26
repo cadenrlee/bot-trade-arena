@@ -42,4 +42,11 @@ export const config = {
     maxFree: parseInt(process.env.API_RATE_LIMIT_MAX_FREE || '30', 10),
     maxPaid: parseInt(process.env.API_RATE_LIMIT_MAX_PAID || '120', 10),
   },
+
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY || '',
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+    priceCompetitor: process.env.STRIPE_PRICE_COMPETITOR || '',
+    pricePro: process.env.STRIPE_PRICE_PRO || '',
+  },
 };

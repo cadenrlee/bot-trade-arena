@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/stores/auth';
 import { cn } from '@/lib/utils';
+import { NotificationBell } from '@/components/ui/notification-bell';
 
 // Pages that should NOT show the sidebar (full-screen experiences)
 const FULL_SCREEN_PAGES = ['/', '/auth/login', '/auth/register', '/auth/forgot-password', '/auth/reset-password'];
@@ -48,6 +49,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
         {user ? (
           <div className="p-3 border-t border-[var(--border-default)]">
+            <div className="flex items-center justify-between mb-1 px-1">
+              <NotificationBell />
+            </div>
             <Link href={`/profile/${user.username}`} className="flex items-center gap-2 p-2 rounded-lg hover:bg-[var(--bg-tertiary)]">
               <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[var(--accent-indigo)] to-[var(--accent-purple)] flex items-center justify-center text-white text-xs font-bold">
                 {(user.username || '?')[0].toUpperCase()}
