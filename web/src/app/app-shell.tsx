@@ -37,6 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
           <NavLink href="/" icon="⚔" label="Battle" />
           <NavLink href="/armory" icon="🗡" label="Armory" />
+          <NavLink href="/battlepass" icon="⭐" label="Battle Pass" />
           <NavLink href="/leaderboards" icon="🏆" label="Rankings" />
           <NavLink href="/social" icon="👥" label="Friends" />
           {user && <NavLink href="/bots" icon="🤖" label="My Bots" />}

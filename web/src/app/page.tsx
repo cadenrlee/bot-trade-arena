@@ -13,6 +13,10 @@ import {
   getPlayerStats, updatePlayerStats, getUnlockedWeapons,
   getEquippedWeapon, getEquippedSkin, type Weapon,
 } from '@/lib/weapons';
+import {
+  getBattlePassState, addBattlePassXP, claimDailyBonus, getXPForCurrentLevel,
+  SEASON_NAME, type BattlePassTier,
+} from '@/lib/battlepass';
 
 // ============================================================
 // QUICK BATTLE — The Core Loop
@@ -70,6 +74,9 @@ export default function Home() {
   const [myElo, setMyElo] = useState(1000);
   const [eloChange, setEloChange] = useState(0);
   const [screenFlash, setScreenFlash] = useState<string | null>(null);
+  const [bpXpGained, setBpXpGained] = useState(0);
+  const [bpLevelUp, setBpLevelUp] = useState<BattlePassTier | null>(null);
+  const [bpState, setBpState] = useState(getBattlePassState());
 
   const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const DURATION = 60;
@@ -82,6 +89,10 @@ export default function Home() {
     setMatchesPlayed(stats.totalMatches);
     const wId = getEquippedWeapon();
     setEquippedWeapon(WEAPONS.find(w => w.id === wId) || WEAPONS[0]);
+    setMyElo(parseInt(localStorage.getItem('bta_elo') || '1000'));
+    setBpState(getBattlePassState());
+    setBpLevelUp(null);
+    setBpXpGained(0);
   }, [phase]);
 
   const startBattle = () => {
@@ -138,6 +149,20 @@ export default function Home() {
         setEloChange(eloDelta);
         setMyElo(newElo);
         localStorage.setItem('bta_elo', String(newElo));
+
+        // Battle Pass XP
+        let xpEarned = won ? 100 : 30;
+        if (won && newStats.winStreak > 1) xpEarned += 50; // streak bonus
+        const bpDailyState = getBattlePassState();
+        if (!bpDailyState.dailyBonusClaimed) {
+          xpEarned += claimDailyBonus();
+        }
+        const bpResult = addBattlePassXP(xpEarned);
+        setBpXpGained(xpEarned);
+        setBpState(getBattlePassState());
+        if (bpResult.leveledUp && bpResult.reward) {
+          setBpLevelUp(bpResult.reward);
+        }
 
         setStreak(newStats.winStreak);
         setMatchesPlayed(newStats.totalMatches);
@@ -216,11 +241,23 @@ export default function Home() {
                 Bot Trade Arena
               </span>
             </h1>
-            <div className="flex items-center justify-center gap-4 mt-2 text-sm">
+            <div className="flex items-center justify-center gap-4 mt-1.5 text-sm">
               {streak > 0 && (
-                <span><span className="text-orange-400">🔥</span> <span className="font-[var(--font-mono)] font-bold">{streak}</span> streak</span>
+                <span><span className="text-orange-400">🔥</span> <span className="font-[var(--font-mono)] font-bold">{streak}</span></span>
               )}
-              <span className="text-[var(--text-tertiary)]">{playerStats.totalWins}W / {playerStats.totalMatches}M</span>
+              <span className="font-[var(--font-mono)] text-xs text-[var(--text-secondary)]">{myElo} ELO</span>
+              <span className="text-[var(--text-tertiary)] text-xs">{playerStats.totalWins}W</span>
+            </div>
+            {/* Battle Pass progress */}
+            <div className="mt-2 px-4">
+              <div className="flex items-center justify-between text-[10px] mb-0.5">
+                <span className="text-[var(--text-tertiary)]">Tier {bpState.level}/50</span>
+                <span className="text-[var(--accent-indigo)] font-[var(--font-mono)]">{getXPForCurrentLevel().current}/{getXPForCurrentLevel().needed} XP</span>
+              </div>
+              <div className="h-1 rounded-full bg-[var(--bg-tertiary)] overflow-hidden">
+                <div className="h-full rounded-full bg-gradient-to-r from-[var(--accent-indigo)] to-[var(--accent-purple)]"
+                  style={{ width: `${(getXPForCurrentLevel().current / getXPForCurrentLevel().needed) * 100}%` }} />
+              </div>
             </div>
           </div>
 
@@ -466,6 +503,40 @@ export default function Home() {
               <p className="text-xs text-[var(--text-tertiary)]">{oppTrades} trades</p>
             </div>
           </div>
+
+          {/* Battle Pass XP */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
+            className="w-full p-3 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-default)] mb-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs text-[var(--text-tertiary)]">{SEASON_NAME} — Tier {bpState.level}/50</span>
+              <span className="text-xs font-[var(--font-mono)] text-[var(--accent-indigo)]">+{bpXpGained} XP</span>
+            </div>
+            <div className="h-2 rounded-full bg-[var(--bg-primary)] overflow-hidden">
+              <motion.div
+                className="h-full rounded-full bg-gradient-to-r from-[var(--accent-indigo)] to-[var(--accent-purple)]"
+                initial={{ width: '0%' }}
+                animate={{ width: `${(getXPForCurrentLevel().current / getXPForCurrentLevel().needed) * 100}%` }}
+                transition={{ delay: 0.6, duration: 0.8, ease: 'easeOut' }}
+              />
+            </div>
+            {!bpState.hasPremium && (
+              <p className="text-[10px] text-[var(--accent-purple)] mt-1.5 text-center">
+                🔒 Unlock Premium rewards — <span className="font-bold">Battle Pass $4.99</span>
+              </p>
+            )}
+          </motion.div>
+
+          {/* Battle Pass level up */}
+          {bpLevelUp && (
+            <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.7, type: 'spring' }}
+              className="w-full p-4 rounded-xl bg-gradient-to-r from-[var(--accent-indigo)]/10 to-[var(--accent-purple)]/10 border border-[var(--accent-indigo)]/30 mb-3 text-center">
+              <p className="text-xs text-[var(--accent-indigo)] font-bold uppercase tracking-wider mb-1">TIER {bpLevelUp.level} UNLOCKED!</p>
+              <p className="text-sm font-bold">{bpLevelUp.freeReward?.name || 'Reward'}</p>
+              {bpLevelUp.premiumReward && !bpState.hasPremium && (
+                <p className="text-[10px] text-[var(--accent-purple)] mt-1">Premium: {bpLevelUp.premiumReward.name} 🔒</p>
+              )}
+            </motion.div>
+          )}
 
           {/* New weapon unlocks! */}
           {newUnlocks.length > 0 && (
