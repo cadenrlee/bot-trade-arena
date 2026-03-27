@@ -193,6 +193,13 @@ class ApiClient {
   adminUpdateLeaderboards() { return this.request<any>('/api/admin/update-leaderboards', { method: 'POST' }); }
   adminClearTestData() { return this.request<any>('/api/admin/clear-test-data', { method: 'POST' }); }
 
+  // VS AI Battles
+  getHouseBots() { return this.request<any[]>('/api/matches/house-bots'); }
+  startVsAI(data: { botId: string; difficulty?: string; mode?: string }) {
+    return this.request<{ matchId: string }>('/api/matches/vs-ai', { method: 'POST', body: JSON.stringify(data) });
+  }
+  getMatchLive(matchId: string) { return this.request<any>(`/api/matches/${matchId}/live`); }
+
   // Health
   getHealth() { return this.request<any>('/api/health'); }
 }
